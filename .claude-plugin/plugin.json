@@ -6,6 +6,5 @@
   "homepage": "https://github.com/HarryJhin/korean-docs",
   "repository": "https://github.com/HarryJhin/korean-docs",
   "license": "MIT",
-  "keywords": ["korean", "documentation", "workflow", "technical-writing", "ai-slop"],
-  "hooks": "./hooks/hooks.json"
+  "keywords": ["korean", "documentation", "workflow", "technical-writing", "ai-slop"]
 }
