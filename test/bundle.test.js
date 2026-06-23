@@ -6,7 +6,7 @@ for (const f of ['fact-verifier', 'prose-editor', 'naturalness-reviewer']) {
   test(`agent ${f} has frontmatter`, () => {
     const t = readFileSync(new URL(`../agents/${f}.md`, import.meta.url), 'utf8')
     assert.match(t, /^---/)
-    assert.match(t, /name:\s*\S+/)
+    assert.ok(t.includes(`name: ${f}`), `agent ${f} must declare name: ${f}`)
     assert.match(t, /description:\s*\S+/)
   })
 }
