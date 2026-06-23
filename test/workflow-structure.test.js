@@ -1,13 +1,17 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { execFileSync } from 'node:child_process'
+import vm from 'node:vm'
 
 const wfUrl = new URL('../workflows/korean-docs.js', import.meta.url)
 const src = readFileSync(wfUrl, 'utf8')
 
-test('workflow syntax is valid', () => {
-  execFileSync(process.execPath, ['--check', wfUrl.pathname]) // 구문 오류 시 throw
+test('workflow body is syntactically valid (workflow-runtime form)', () => {
+  // Workflow scripts use `export const meta` + top-level await/return, a combo
+  // plain `node --check` rejects. Strip `export` and wrap the body in an async
+  // function to legalize top-level await/return, then COMPILE only (no execution).
+  const wrapped = '(async function(){\n' + src.replace(/^export\s+/gm, '') + '\n})'
+  new vm.Script(wrapped) // throws on SyntaxError; does not run agent()/etc.
 })
 test('workflow declares meta and 7 phases', () => {
   assert.match(src, /export const meta/)
