@@ -36,3 +36,24 @@ test('workflow has no forbidden runtime APIs', () => {
   assert.ok(!/\brequire\(/.test(src), 'no require')
   assert.ok(!/Date\.now|Math\.random/.test(src), 'no Date.now/Math.random')
 })
+
+// ── 닫힌 게이트 회귀 방지 ──
+
+test('gate1: naturalness check is a closed loop (re-verifies after redo)', () => {
+  // 재작성본을 검증 없이 반환하면 안 된다 — 루프 상단으로 돌아가 재판정해야 한다.
+  assert.match(src, /for\s*\(let round/, 'redo must loop back to re-verify')
+  assert.match(src, /MAX_REDO/, 'loop must be bounded to avoid infinite redo')
+  assert.match(src, /prose-redo:\$\{r\.section\.title\}#\$\{round\}/, 'redo runs inside the loop')
+})
+
+test('gate2: S1 is a deterministic runtime hard gate ANDed with the LLM verdict', () => {
+  assert.match(src, /const s1Violations =/, 'inline S1 checker defined (self-contained, no import)')
+  assert.match(src, /이중 피동/, 'S1 inline list covers double-passive')
+  // 확정 조건은 LLM 판정과 S1 클린이 동시 만족이어야 한다.
+  assert.match(src, /review\.pass\s*&&\s*review\.fidelityOk\s*&&\s*s1\.length === 0/, 'S1 ANDed into pass condition')
+})
+
+test('gate3: sections with zero verified facts are dropped before drafting', () => {
+  assert.match(src, /\.filter\(r => \(r\.facts \|\| \[\]\)\.length > 0\)/, 'empty-fact sections filtered out')
+  assert.match(src, /사실 0건으로 드롭된 섹션/, 'drop is logged')
+})

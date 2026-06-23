@@ -61,6 +61,22 @@ const MARKDOWN_RULES =
   '- 각 항목 구성: 시그니처 → 한 줄 요약 → (파라미터 표) → 반환 → 예시 → 에러.\n' +
   '- 장식용 이모지·과한 볼드·수평선(---) 금지. 분량은 항목당 핵심만, 도입·요약 문단 없이 본론부터.'
 
+// ── 인라인 S1 결정론적 게이트 ──
+// lib/prose-checks.js의 S1_PATTERNS와 동일한 패턴이다. 워크플로우는 ~/.claude/workflows/로
+// 단일 파일 복사돼 lib/를 동반하지 못하므로(모듈 로딩 불가) 자기완결을 위해 인라인한다.
+// LLM 판정(자연스러움 리뷰)과 독립적으로 작동하는 0/1 하드 게이트다.
+const stripCodeForProse = (md) => md.replace(/```[\s\S]*?```/g, '').replace(/`[^`\n]*`/g, '')
+const S1_INLINE = [
+  { name: 'em dash(—)', re: /—/g },
+  { name: '이모지', re: /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}]/gu },
+  { name: '세미콜론(산문)', re: /;/g },
+  { name: '이중 피동(되어진다/지게 된다)', re: /(되어[지진]|지게\s*된)/g },
+]
+const s1Violations = (md) => {
+  const prose = stripCodeForProse(md)
+  return S1_INLINE.filter(p => (prose.match(p.re) || []).length > 0).map(p => p.name)
+}
+
 // ── 1. 스코프 ──
 phase('스코프')
 const outline = await agent(
@@ -112,7 +128,12 @@ const researched = await pipeline(
 )
 
 // ── 전역 인용 번호 부여 (논문식 [n] 인용 + 출처 목록) ──
-const valid = researched.filter(Boolean)
+// 게이트3: 확정 사실이 0건인 섹션은 초안에 넘기지 않는다. 검증을 통과한 사실이 없으면
+// 작가는 '출처 필요'만 가득한 빈 껍데기를 쓰게 되므로, 그 전에 드롭한다.
+const nonEmpty = researched.filter(Boolean)
+const valid = nonEmpty.filter(r => (r.facts || []).length > 0)
+const emptyDropped = nonEmpty.filter(r => (r.facts || []).length === 0).map(r => r.section.title)
+if (emptyDropped.length) log(`사실 0건으로 드롭된 섹션 ${emptyDropped.length}개: ${emptyDropped.join(', ')}`)
 const sourceList = []
 const sourceNum = new Map()
 for (const r of valid) {
@@ -141,21 +162,37 @@ const finished = await pipeline(
     { schema: SECTION_SCHEMA, label: `prose:${r.section.title}`, phase: '문체 교정' }
   ).then(s => ({ ...r, edited: s })),
   async (r) => {
-    const review = await agent(
-      `너는 한국어 자연스러움 리뷰어다. 세 가지를 판정한다. ` +
-      `(1) 자연스러움: "이 글이 왜 아직도 AI처럼 읽히나?" 남은 신호(균일한 리듬, 의견 부재, 기계적 전환어, 번역투)를 issues로 적는다. ` +
-      `(2) 독자·톤 적합: '${audience}'에게 '${tone}' 톤으로 적절한지 본다. ` +
-      `(3) 사실 충실도: 교정 과정에서 원 사실이 왜곡·날조됐는지, 인용 [n]이 보존됐는지 확인해 fidelityOk를 정한다. ` +
-      `(1)·(2)가 모두 만족이면 pass=true.\n` +
-      `원 사실:\n${r.facts.map(f => `- [${cite(f.source)}] ${f.claim}`).join('\n') || '(없음)'}\n\n섹션:\n${r.edited.markdown}`,
-      { schema: NATURALNESS_VERDICT_SCHEMA, label: `review:${r.section.title}`, phase: '자연스러움 검증' }
-    )
-    if (review.pass && review.fidelityOk) return { title: r.section.title, markdown: r.edited.markdown }
-    const fixed = await agent(
-      `아래 지적을 반영해 섹션을 다시 쓴다. 독자(${audience})·톤(${tone}) 유지, 문체 기준 유지, 사실·인용[n] 보존, 날조 금지. 교정된 본문만 반환(변경 내역·설명 금지).\n${PROSE_RULES}\n\n지적:\n${(review.issues || []).map(x => '- ' + x).join('\n')}\n\n섹션:\n${r.edited.markdown}`,
-      { schema: SECTION_SCHEMA, label: `prose-redo:${r.section.title}`, phase: '문체 교정' }
-    )
-    return { title: r.section.title, markdown: fixed.markdown }
+    // 게이트1: 검사→수정→재검사의 폐루프. 재작성본을 검증 없이 반환하지 않고,
+    //          루프 상단으로 돌아가 다시 판정한다. MAX_REDO로 무한루프를 막는다.
+    // 게이트2: S1(em dash·이모지·세미콜론·이중피동)은 결정론적 0/1 하드 게이트로,
+    //          LLM 자연스러움 판정과 AND로 묶인다. 둘 다 통과해야 섹션이 확정된다.
+    const MAX_REDO = 2
+    let md = r.edited.markdown
+    const factLines = r.facts.map(f => `- [${cite(f.source)}] ${f.claim}`).join('\n') || '(없음)'
+    for (let round = 0; ; round++) {
+      const review = await agent(
+        `너는 한국어 자연스러움 리뷰어다. 세 가지를 판정한다. ` +
+        `(1) 자연스러움: "이 글이 왜 아직도 AI처럼 읽히나?" 남은 신호(균일한 리듬, 의견 부재, 기계적 전환어, 번역투)를 issues로 적는다. ` +
+        `(2) 독자·톤 적합: '${audience}'에게 '${tone}' 톤으로 적절한지 본다. ` +
+        `(3) 사실 충실도: 교정 과정에서 원 사실이 왜곡·날조됐는지, 인용 [n]이 보존됐는지 확인해 fidelityOk를 정한다. ` +
+        `(1)·(2)가 모두 만족이면 pass=true.\n` +
+        `원 사실:\n${factLines}\n\n섹션:\n${md}`,
+        { schema: NATURALNESS_VERDICT_SCHEMA, label: `review:${r.section.title}#${round}`, phase: '자연스러움 검증' }
+      )
+      const s1 = s1Violations(md)
+      if (review.pass && review.fidelityOk && s1.length === 0) return { title: r.section.title, markdown: md }
+      if (round >= MAX_REDO) {
+        log(`${r.section.title}: 게이트 ${MAX_REDO + 1}회 미통과 (S1 잔여 ${s1.length}건) — 마지막 교정본 사용`)
+        return { title: r.section.title, markdown: md }
+      }
+      const issues = [...(review.issues || [])]
+      if (s1.length) issues.push(`S1 위반 무조건 제거: ${s1.join(', ')}`)
+      const fixed = await agent(
+        `아래 지적을 반영해 섹션을 다시 쓴다. 독자(${audience})·톤(${tone}) 유지, 문체 기준 유지, 사실·인용[n] 보존, 날조 금지. 교정된 본문만 반환(변경 내역·설명 금지).\n${PROSE_RULES}\n\n지적:\n${issues.map(x => '- ' + x).join('\n')}\n\n섹션:\n${md}`,
+        { schema: SECTION_SCHEMA, label: `prose-redo:${r.section.title}#${round}`, phase: '문체 교정' }
+      )
+      md = fixed.markdown
+    }
   }
 )
 
@@ -174,8 +211,7 @@ const stripDupHeading = (md) => md.replace(/^\s*#{1,2}\s+.*(?:\r?\n|$)/, '').tri
 const body = ordered.map(s => `## ${s.title}\n\n${stripDupHeading(s.markdown)}\n`).join('\n')
 const finalDoc = `# ${topic}\n\n${body}${refList}`
 
-const prose = finalDoc.replace(/```[\s\S]*?```/g, '').replace(/`[^`\n]*`/g, '')
-const s1hits = (prose.match(/[—;]/g) || []).length + (prose.match(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}]/gu) || []).length
-log(`완성: ${ordered.length}개 섹션, 출처 ${sourceList.length}건, 잔여 S1 후보 ${s1hits}건`)
+const s1remaining = s1Violations(finalDoc)
+log(`완성: ${ordered.length}개 섹션, 출처 ${sourceList.length}건, 잔여 S1 ${s1remaining.length}건${s1remaining.length ? ` (${s1remaining.join(', ')})` : ''}`)
 
 return { markdown: finalDoc, sections: ordered.length, sources: sourceList }
