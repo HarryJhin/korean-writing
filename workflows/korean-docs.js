@@ -61,6 +61,9 @@ const researched = await pipeline(
   async (r) => {
     const verified = []
     for (const fact of r.facts) {
+      // Workflow 런타임 계약: parallel은 실패한 thunk(agent 오류 포함)를 null로 resolve하며
+      // 절대 reject하지 않는다. 따라서 verifier 하나가 실패해도 파이프라인이 중단되지 않고,
+      // 아래 votes.filter(Boolean)가 실패 표를 제외한다(부분 결과 + 정족수 판정 유지).
       const votes = await parallel([0, 1, 2].map(i => () =>
         agent(
           `다음 주장이 출처에 의해 뒷받침되는지 적대적으로 검증한다. 불확실하면 verified=false.\n` +
@@ -107,6 +110,9 @@ const finished = await pipeline(
 // ── 7. 조립 ──
 phase('조립')
 const ordered = finished.filter(Boolean)
+const finalTitles = new Set(ordered.map(s => s.title))
+const droppedSections = sections.map(s => s.title).filter(t => !finalTitles.has(t))
+if (droppedSections.length) log(`드롭된 섹션 ${droppedSections.length}개: ${droppedSections.join(', ')}`)
 const seen = new Set()
 const sources = []
 for (const r of researched.filter(Boolean)) {
@@ -122,7 +128,7 @@ const body = ordered.map(s => `## ${s.title}\n\n${s.markdown.trim()}\n`).join('\
 const finalDoc = `# ${topic}\n\n${body}${refList}`
 
 const prose = finalDoc.replace(/```[\s\S]*?```/g, '').replace(/`[^`\n]*`/g, '')
-const s1hits = (prose.match(/[—;]/g) || []).length + (prose.match(/[\u{1F300}-\u{1FAFF}]/gu) || []).length
+const s1hits = (prose.match(/[—;]/g) || []).length + (prose.match(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}]/gu) || []).length
 log(`완성: ${ordered.length}개 섹션, 출처 ${sources.length}건, 잔여 S1 후보 ${s1hits}건`)
 
 return { markdown: finalDoc, sections: ordered.length, sources }
