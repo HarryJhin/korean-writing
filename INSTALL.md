@@ -1,41 +1,41 @@
 # 설치
 
-워크플로우는 현재 Claude Code 마켓플레이스로 배포할 수 없다(plugin.json에 workflow 필드 없음, anthropics/claude-code#66032 참조). 수동 설치한다.
+두 가지 방법이 있다. **A. 마켓플레이스(권장)** 또는 **B. 수동 복사**.
 
-## 1. 리포 클론
+> 참고: 현재 Claude Code는 워크플로우를 1급 플러그인 컴포넌트로 배포하지 못한다(plugin.json에 `workflows` 필드 없음, anthropics/claude-code#66032). 그래서 마켓플레이스 설치에서는 SessionStart 훅이 번들된 워크플로우를 `~/.claude/workflows/`로 복사한다 — 문서상 비권장 워크어라운드이며, #66032 머지 시 정규 컴포넌트로 전환한다.
 
-```bash
-git clone <repo-url> korean-docs && cd korean-docs
+## A. 마켓플레이스 설치 (권장)
+
+```
+/plugin marketplace add HarryJhin/korean-docs
+/plugin install korean-docs@korean-docs-marketplace
 ```
 
-## 2. 워크플로우 배치
+설치하면:
+- `write-korean-docs` pre-flight 스킬이 등록된다(`korean-docs:write-korean-docs`).
+- SessionStart 훅이 워크플로우를 `~/.claude/workflows/`로 복사한다 → **다음 세션부터** `/korean-docs` 슬래시 커맨드가 생긴다.
 
-워크플로우는 자기완결 단일 파일이다. 별도 스킬·서브에이전트 설치가 필요 없다.
+## B. 수동 복사
 
 ```bash
-mkdir -p ~/.claude/workflows
+git clone https://github.com/HarryJhin/korean-docs && cd korean-docs
+mkdir -p ~/.claude/workflows ~/.claude/skills
 cp workflows/korean-docs.js ~/.claude/workflows/
+cp -R skills/write-korean-docs ~/.claude/skills/   # 선택: pre-flight 스킬
 ```
 
-## 3. (선택) pre-flight 트리거 스킬 배치
+## 실행
 
-자연어 발동 + 실행 전 파라미터(독자·톤) 수집 + 비용 경고를 원하면 스킬도 복사한다. 워크플로우 자체는 이 스킬 없이도 동작한다.
+설치하면 `/korean-docs` 슬래시 커맨드가 생긴다(`/deep-research`와 동일한 방식). 주제를 인자로 넘긴다:
 
-```bash
-mkdir -p ~/.claude/skills
-cp -R skills/write-korean-docs ~/.claude/skills/
-```
-
-## 4. 실행
-
-설치하면 `/korean-docs` 슬래시 커맨드가 자동 생성된다(`/deep-research`와 동일한 방식). 주제를 인자로 넘긴다:
 ```
 /korean-docs JavaScript Array.prototype.flat() 메서드 레퍼런스
 ```
+
 독자·톤 등을 지정하려면 JSON으로 넘긴다:
+
 ```
 /korean-docs {"topic":"...","docType":"reference","audience":"...","tone":"..."}
 ```
-`/workflows` UI에서 선택해 실행해도 된다. 3의 스킬을 깔았다면 "한글 레퍼런스 문서 만들어줘" 같은 자연어로도 진입한다(실행 전 파라미터를 묻고 비용을 고지한다).
 
-#66032가 머지되면 `workflows/`를 플러그인 컴포넌트로 동봉해 `/plugin install`로 전환할 예정.
+`/workflows` UI에서 선택해 실행해도 된다. pre-flight 스킬을 깔았다면 "한글 레퍼런스 문서 만들어줘" 같은 자연어로도 진입한다(실행 전 파라미터를 묻고 비용을 고지한다).
