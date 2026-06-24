@@ -9,6 +9,18 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-24
+
+### Changed
+- 사실 검증을 섹션-로컬 파이프라인에서 전역 배리어로 재구성(deep-research harness 원리). 리서치 후 전 섹션 fact를 전역 풀로 모아 importance·sourceQuality로 랭킹한 뒤 상위 30건(`MAX_VERIFY_TOTAL`)만 검증한다. 검증 서브에이전트 호출이 fact 총량과 무관하게 `30 × VOTES_PER_FACT(3) = 90`으로 상한된다(이전엔 섹션 수 × 섹션당 사실 수에 비례해 무제한 팽창, 런타임 제약 도달).
+- 검증자에 출처 URL을 `WebFetch`로 직접 재조회하고 의심 시 `WebSearch`로 반증을 찾도록 지시(이전엔 주장·출처 문자열만 전달, 도구 재조회 지시 없음 — 환각 검증 위험).
+- 검증 정족수에 abstain(실패·기권 표)을 명시 처리: 유효표와 verified가 모두 `VERIFY_QUORUM(2)` 이상이어야 통과(과다 abstain → 통과 불가).
+
+### Added
+- 전역 출처/사실 dedup: `normURL`(www·trailing slash 정규화) 기반 출처 중복 통합 + `(정규화 출처 + 정규화 주장)` 키 결정론적 사실 중복 제거. fact에 `sourceQuality`(primary/secondary/blog/forum/unreliable) 등급 부여.
+- `agent()` null 반환(user-skip/에러) 가드를 outline·draft·prose·review 전 지점에 추가. 확정 사실이 있는 섹션이 0개면 빈 문서 대신 진단 객체를 반환한다.
+- 최종 반환 `stats`에 `agentCalls` 추정치와 dedup/캡/드롭 카운트 추가(폭발을 사전 노출).
+
 ## [0.2.0] - 2026-06-24
 
 ### Added
