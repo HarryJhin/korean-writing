@@ -25,10 +25,20 @@ const sourcePath = (req.sourcePath || '').trim()
 const mode = existingDoc ? 'edit' : 'generate'
 const docType = req.docType || 'reference'
 
-// ── 전역 배리어 상수 ──
-const MAX_VERIFY_TOTAL = 30
+// ── 전역 캡 (deep-research식: 모든 fan-out 차원을 상수로 닫는다) ──
+// 닫힌 형식 천장 = 1(outline) + MAX_SECTIONS(research) + MAX_SECTIONS(edit extract)
+//   + MAX_VERIFY_TOTAL×VOTES_PER_FACT(verify) + MAX_SECTIONS×(1 draft+1 prose+(MAX_REDO+1) review+MAX_REDO fix).
+// 입력(섹션 수·사실 수)과 무관하게 상한이 고정된다 — 섹션 무캡이 천장을 뚫던 토큰 폭주를 차단.
+const MAX_SECTIONS = 8
+const MAX_VERIFY_TOTAL = 13
 const VOTES_PER_FACT = 3
 const VERIFY_QUORUM = 2
+const MAX_REDO = 1
+// 단계별 모델 티어 — 전 에이전트를 세션 모델(Opus[1m], 최고가 티어)로 돌리던 비용을 내린다.
+// 설계·판정 품질이 중요한 단계만 Opus, 나머지는 Sonnet/Haiku.
+const M_DESIGN = 'opus'   // outline · 자연스러움 리뷰
+const M_WORK = 'sonnet'   // 리서치 · 추출 · 검증 · 초안
+const M_EDIT = 'sonnet'   // 문체 교정 · 재작성 (Haiku는 긴 지시+내장 문서에서 이탈해 본문을 날림 — Sonnet 하한)
 // deep-research wf의 normURL 복제: www·trailing slash 제거 후 소문자. 출처 dedup 키.
 const normURL = (u) => {
   try {
@@ -92,8 +102,9 @@ const OUTLINE_SCHEMA = {
   },
 }
 const FACT_SCHEMA = { type: 'object', required: ['facts'], properties: { facts: { type: 'array',
-  items: { type: 'object', required: ['claim', 'source', 'importance', 'sourceQuality'], properties: {
+  items: { type: 'object', required: ['claim', 'source', 'quote', 'importance', 'sourceQuality'], properties: {
     claim: { type: 'string' }, source: { type: 'string' },
+    quote: { type: 'string' },
     importance: { type: 'string', enum: ['central', 'supporting', 'tangential'] },
     sourceQuality: { enum: ['primary', 'secondary', 'blog', 'forum', 'unreliable'] } } } } } }
 const FACT_VERDICT_SCHEMA = { type: 'object', required: ['verified', 'reason'],
@@ -159,10 +170,14 @@ const outline = await agent(
   `- audience: 이 문서를 읽는 구체적 독자(지정값이 있으면 그대로). 예: "REST API를 처음 쓰는 백엔드 개발자"\n` +
   `- tone: 톤앤매너(지정값이 있으면 그대로). 예: "간결하고 중립적인 레퍼런스체, 군더더기 없이"\n` +
   `- sections: 필수 섹션(개요, 항목별 레퍼런스, 에러/예외)과 각 섹션의 리서치 질문 1~4개`,
-  { schema: OUTLINE_SCHEMA, label: 'scope:outline' }
+  { schema: OUTLINE_SCHEMA, label: 'scope:outline', model: M_DESIGN }
 )
 if (!outline || !Array.isArray(outline.sections) || outline.sections.length === 0) return { error: '아웃라인 에이전트가 결과를 반환하지 않았다(스코프 단계 실패).', topic, mode }
-const sections = outline.sections || []
+let sections = outline.sections || []
+if (sections.length > MAX_SECTIONS) {
+  log(`섹션 캡: outline ${sections.length}개 중 상위 ${MAX_SECTIONS}개만 유지(${sections.length - MAX_SECTIONS}개 컷)`)
+  sections = sections.slice(0, MAX_SECTIONS)
+}
 if (mode === 'edit') {
   const kept = new Set(sections.map(s => s.fromExisting).filter(Boolean))
   const droppedExisting = existingSections.map(s => s.title).filter(t => !kept.has(t))
@@ -170,7 +185,11 @@ if (mode === 'edit') {
 }
 const audience = (req.audience || outline.audience || '기술 실무자').trim()
 const tone = (req.tone || outline.tone || '간결하고 정확한 레퍼런스체').trim()
-log(`아웃라인 ${sections.length}개 섹션 · 독자: ${audience}`)
+// 닫힌 형식 에이전트 천장 — 입력과 무관하게 캡으로만 결정된다(deep-research식 관측성).
+const AGENTS_MAX = 1 + sections.length + (mode === 'edit' ? sections.length : 0) +
+  MAX_VERIFY_TOTAL * VOTES_PER_FACT +
+  sections.length * (1 + 1 + (MAX_REDO + 1) + MAX_REDO)
+log(`아웃라인 ${sections.length}개 섹션 · 독자: ${audience} · 에이전트 천장 ${AGENTS_MAX}`)
 
 // ── 2. 섹션별 리서치 (pipeline, 무배리어) — 검증은 전역 배리어로 분리 ──
 const researched = await pipeline(
@@ -179,10 +198,11 @@ const researched = await pipeline(
     const r = await agent(
       `너는 기술 사실 조사자다. 목표: 검증 가능한 출처로 뒷받침되는 사실만 모은다.\n` +
       `다음 리서치 질문들에 대해 웹·공식 문서를 조사해 사실을 수집한다. 각 사실에 출처 URL을 단다. 확인 안 되면 포함하지 말 것(날조 금지).\n` +
+      `각 사실에 출처 본문에서 직접 따온 근거 문장을 quote로 단다 — 검증 단계가 이 인용문으로 주장을 판정한다. 주장을 실제로 뒷받침하는 원문 구절이어야 하며, 뒷받침할 인용을 못 찾으면 그 사실은 버린다.\n` +
       `각 사실에 importance(central/supporting/tangential)와 sourceQuality(primary/secondary/blog/forum/unreliable)를 매긴다. ` +
       `공식 문서·1차 자료=primary, 보도=secondary, 개인 블로그=blog, 포럼=forum, 신뢰 불가=unreliable.\n` +
       `섹션: ${section.title}\n질문:\n${(section.researchQuestions || []).map(q => '- ' + q).join('\n')}`,
-      { schema: FACT_SCHEMA, label: `research:${section.title}`, phase: '리서치' }
+      { schema: FACT_SCHEMA, label: `research:${section.title}`, phase: '리서치', model: M_WORK }
     )
     let facts = (r && r.facts) || []
     if (mode === 'edit' && section.fromExisting) {
@@ -192,13 +212,13 @@ const researched = await pipeline(
           `너는 기술 문서에서 검증 가능한 사실 주장만 뽑아내는 추출기다. 아래 기존 섹션 본문에서 ` +
           `사실 주장을 추출한다. 각 주장에 본문의 인용 번호 [n]이 달려 있으면 그 숫자를 citation에 적는다(없으면 생략). ` +
           `의견·서술·예시 설명이 아니라 검증 가능한 기술적 사실만.\n\n${orig.markdown}`,
-          { schema: EXTRACT_SCHEMA, label: `extract:${section.title}`, phase: '리서치' }
+          { schema: EXTRACT_SCHEMA, label: `extract:${section.title}`, phase: '리서치', model: M_WORK }
         )
         let unsourcedDropped = 0
         for (const c of ((extracted && extracted.claims) || [])) {
           const srcUrl = c.citation != null ? (existingSourceMap.get(c.citation) || '') : ''
           if (!srcUrl) { unsourcedDropped++; continue }
-          facts.push({ claim: c.claim, source: srcUrl, importance: 'supporting', sourceQuality: 'secondary', _origin: 'existing' })
+          facts.push({ claim: c.claim, source: srcUrl, quote: '', importance: 'supporting', sourceQuality: 'secondary', _origin: 'existing' })
         }
         if (unsourcedDropped) log(`${section.title}: 출처 없는 원본 주장 ${unsourcedDropped}건 기각(검증 전)`)
       }
@@ -241,13 +261,13 @@ if (capDropped > 0) log(`전역 캡: ${dedupedFacts.length}건 중 상위 ${rank
 const verifyOne = (fact) => parallel(
   Array.from({ length: VOTES_PER_FACT }, (_, i) => () =>
     agent(
-      `너는 기술 문서 사실 검증자다. 목표: 출처가 주장을 실제로 뒷받침하는지 적대적으로 가린다.\n` +
-      `1) WebFetch로 아래 출처 URL을 직접 열어 본문에서 주장을 확인한다. ` +
-      `2) 의심되면 WebSearch로 모순·반증 증거를 찾는다. ` +
+      `너는 기술 문서 사실 검증자다. 목표: 주장이 근거 인용문으로 실제 뒷받침되는지 적대적으로 가린다.\n` +
+      `1) 아래 근거 인용문이 주장을 실제로 뒷받침하는지 본다 — 과장·오독·범위 초과면 verified=false. ` +
+      `2) 인용문이 비었거나 불충분하거나 의심되면 WebSearch로 모순·반증 증거를 찾는다. ` +
       `3) 시그니처·파라미터·기본값·버전 같은 기술적 사실은 특히 엄격히 본다.\n` +
-      `출처에서 직접 확인되지 않으면 verified=false. 불확실하면 기각이 기본값이다.\n` +
-      `주장: ${fact.claim}\n출처: ${fact.source} (${fact.sourceQuality})`,
-      { schema: FACT_VERDICT_SCHEMA, label: `verify:${fact.sectionTitle}#${i}`, phase: '사실 검증' }
+      `인용문·검색으로 확인되지 않으면 verified=false. 불확실하면 기각이 기본값이다.\n` +
+      `주장: ${fact.claim}\n출처: ${fact.source} (${fact.sourceQuality})\n근거 인용문: ${fact.quote || '(없음 — WebSearch로 확인하라)'}`,
+      { schema: FACT_VERDICT_SCHEMA, label: `verify:${fact.sectionTitle}#${i}`, phase: '사실 검증', model: M_WORK }
     )
   )
 ).then(votes => {
@@ -299,12 +319,12 @@ const finished = await pipeline(
       ? `기존 본문(표현·구성을 사실이 보존되는 한 최대한 유지하되, 확정 사실에 없는 내용은 버린다. 이 기존 본문에 박힌 옛 인용번호 [n]은 무시하고, 위 '확정 사실'의 번호만 사용한다):\n${(existingSections.find(s => s.title === r.section.fromExisting) || {}).markdown || ''}\n`
       : '') +
     `섹션 제목: ${r.section.title}\n확정 사실(번호=출처):\n${r.facts.map(f => `- [${cite(f.source)}] ${f.claim} (출처: ${f.source})`).join('\n') || '(없음)'}`,
-    { schema: SECTION_SCHEMA, label: `draft:${r.section.title}`, phase: '초안' }
+    { schema: SECTION_SCHEMA, label: `draft:${r.section.title}`, phase: '초안', model: M_WORK }
   ).then(s => s ? ({ ...r, draft: s }) : null),
   (r) => !r ? null : agent(
     `너는 한국어 기술문서 에디터다. 목표: 아래 독자·톤을 유지하며 한국어 문체를 교정한다.\n` +
     `독자: ${audience}\n톤앤매너: ${tone}\n기준:\n${PROSE_RULES}\n교정된 본문 Markdown만 반환한다 — 변경 내역·설명·메모를 본문에 넣지 마라.\n\n${r.draft.markdown}`,
-    { schema: SECTION_SCHEMA, label: `prose:${r.section.title}`, phase: '문체 교정' }
+    { schema: SECTION_SCHEMA, label: `prose:${r.section.title}`, phase: '문체 교정', model: M_EDIT }
   ).then(s => s ? ({ ...r, edited: s }) : null),
   async (r) => {
     if (!r) return null
@@ -312,8 +332,15 @@ const finished = await pipeline(
     //          루프 상단으로 돌아가 다시 판정한다. MAX_REDO로 무한루프를 막는다.
     // 게이트2: S1(em dash·이모지·세미콜론·이중피동)은 결정론적 0/1 하드 게이트로,
     //          LLM 자연스러움 판정과 AND로 묶인다. 둘 다 통과해야 섹션이 확정된다.
-    const MAX_REDO = 2
+    // 인용 보존 가드: 교정/재작성 에이전트가 지시를 이탈해 본문을 메타·거부문으로 날리면
+    // 인용 [n]이 통째로 사라진다. 초안의 인용 수를 하한으로 삼아, 절반 이상 붕괴하면
+    // 교정본을 신뢰하지 않고 초안으로 폴백한다(모델 무관 방어층 — Haiku 이탈 사고 재발 차단).
+    const citeCount = (s) => ((s || '').match(/\[\d+\]/g) || []).length
+    const drafted = r.draft.markdown
+    const baseCites = citeCount(drafted)
+    const degraded = (s) => baseCites > 0 && citeCount(s) < baseCites / 2
     let md = r.edited.markdown
+    if (degraded(md)) { log(`${r.section.title}: 문체교정이 인용 ${baseCites}→${citeCount(md)}로 붕괴 — 초안으로 폴백`); md = drafted }
     const factLines = r.facts.map(f => `- [${cite(f.source)}] ${f.claim}`).join('\n') || '(없음)'
     for (let round = 0; ; round++) {
       const review = await agent(
@@ -323,21 +350,25 @@ const finished = await pipeline(
         `(3) 사실 충실도: 교정 과정에서 원 사실이 왜곡·날조됐는지, 인용 [n]이 보존됐는지 확인해 fidelityOk를 정한다. ` +
         `(1)·(2)가 모두 만족이면 pass=true.\n` +
         `원 사실:\n${factLines}\n\n섹션:\n${md}`,
-        { schema: NATURALNESS_VERDICT_SCHEMA, label: `review:${r.section.title}#${round}`, phase: '자연스러움 검증' }
+        { schema: NATURALNESS_VERDICT_SCHEMA, label: `review:${r.section.title}#${round}`, phase: '자연스러움 검증', model: M_DESIGN }
       )
       const s1 = s1Violations(md)
       if (review.pass && review.fidelityOk && s1.length === 0) return { title: r.section.title, markdown: md }
       if (round >= MAX_REDO) {
-        log(`${r.section.title}: 게이트 ${MAX_REDO + 1}회 미통과 (S1 잔여 ${s1.length}건) — 마지막 교정본 사용`)
-        return { title: r.section.title, markdown: md }
+        // 게이트 미통과 salvage: 마지막 후보가 초안보다 인용이 붕괴했으면 junk다 — 초안을 쓴다(품질 하한).
+        const finalMd = degraded(md) ? drafted : md
+        log(`${r.section.title}: 게이트 ${MAX_REDO + 1}회 미통과 (S1 잔여 ${s1.length}건) — ${finalMd === drafted ? '초안 폴백' : '마지막 교정본'} 사용`)
+        return { title: r.section.title, markdown: finalMd }
       }
       const issues = [...(review.issues || [])]
       if (s1.length) issues.push(`S1 위반 무조건 제거: ${s1.join(', ')}`)
       const fixed = await agent(
         `아래 지적을 반영해 섹션을 다시 쓴다. 독자(${audience})·톤(${tone}) 유지, 문체 기준 유지, 사실·인용[n] 보존, 날조 금지. 교정된 본문만 반환(변경 내역·설명 금지).\n${PROSE_RULES}\n\n지적:\n${issues.map(x => '- ' + x).join('\n')}\n\n섹션:\n${md}`,
-        { schema: SECTION_SCHEMA, label: `prose-redo:${r.section.title}#${round}`, phase: '문체 교정' }
+        { schema: SECTION_SCHEMA, label: `prose-redo:${r.section.title}#${round}`, phase: '문체 교정', model: M_EDIT }
       )
-      md = fixed.markdown
+      // 재작성이 인용을 줄이면(이탈 신호) 폐기하고 직전본 유지.
+      if (citeCount(fixed.markdown) >= citeCount(md)) md = fixed.markdown
+      else log(`${r.section.title}: 재작성#${round} 인용 ${citeCount(md)}→${citeCount(fixed.markdown)} 축소 — 폐기, 직전본 유지`)
     }
   }
 )
@@ -372,8 +403,10 @@ const finalDoc = `# ${topic}\n\n${body}${refList}`
 const s1remaining = s1Violations(finalDoc)
 log(`완성: ${ordered.length}개 섹션, 출처 ${sourceList.length}건, 잔여 S1 ${s1remaining.length}건${s1remaining.length ? ` (${s1remaining.join(', ')})` : ''}`)
 
-// 에이전트 호출 추정: outline 1 + research(섹션수) + 검증 + 초안/문체/자연스러움(섹션×3 근사).
-const agentCalls = 1 + sections.length + verifyCalls + (ordered.length * 3)
+// 에이전트 호출 추정: outline 1 + research(섹션) + (편집 시 extract) + 검증 + 생성 꼬리.
+// 꼬리는 섹션당 1 draft + 1 prose + 최대 (MAX_REDO+1) review + MAX_REDO fix.
+const agentCalls = 1 + sections.length + (mode === 'edit' ? sections.length : 0) + verifyCalls +
+  ordered.length * (1 + 1 + (MAX_REDO + 1) + MAX_REDO)
 return {
   markdown: finalDoc,
   sections: ordered.length,
@@ -388,5 +421,8 @@ return {
     sourcesCited: sourceList.length,
     s1Remaining: s1remaining.length,
     agentCalls,
+    agentsMax: AGENTS_MAX,
+    caps: { MAX_SECTIONS, MAX_VERIFY_TOTAL, VOTES_PER_FACT, MAX_REDO },
+    models: { design: M_DESIGN, work: M_WORK, edit: M_EDIT },
   },
 }

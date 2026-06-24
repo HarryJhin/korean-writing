@@ -115,10 +115,19 @@ test('global-barrier: pool is deduped, ranked, and capped', () => {
   assert.match(src, /qualRank/, 'source-quality ranking')
 })
 
-test('global-barrier: verification is grounded and quorum-gated', () => {
-  assert.match(src, /WebFetch/, 'verifier instructed to re-fetch the source')
+test('global-barrier: verification is grounded (quote-based) and quorum-gated', () => {
+  // deep-research식: research가 뽑은 근거 인용문으로 판정하고, 의심 시 WebSearch로 반증을 찾는다.
+  // 검증마다 출처 전문을 WebFetch 재페치하던 구조를 제거 — 동시 풀페치가 서버 레이트리밋을 트립시켰다.
+  assert.match(src, /근거 인용문/, 'verifier judges against an extracted supporting quote')
+  assert.match(src, /WebSearch/, 'verifier hunts counter-evidence via search')
+  assert.doesNotMatch(src, /WebFetch로 아래 출처/, 'verify no longer re-fetches full source pages')
   assert.match(src, /반증|contradicting/i, 'verifier hunts counter-evidence')
   assert.match(src, /valid\.length\s*>=\s*VERIFY_QUORUM/, 'quorum of valid votes required (abstain handled)')
+})
+
+test('global-barrier: facts carry a supporting quote for grounded verification', () => {
+  assert.match(src, /quote:\s*\{\s*type:\s*['"]string['"]/, 'fact schema includes a quote field')
+  assert.match(src, /required:\s*\[[^\]]*['"]quote['"]/, 'quote is required of researched facts')
 })
 
 test('resilience: outline null-guarded and empty-result salvage', () => {
@@ -129,6 +138,33 @@ test('resilience: outline null-guarded and empty-result salvage', () => {
 test('observability: final return reports agentCalls and drop counts', () => {
   assert.match(src, /agentCalls/, 'agent call estimate returned')
   assert.match(src, /stats:\s*\{/, 'stats object in final return')
+})
+
+// ── 닫힌-형식 캡 (deep-research식 fan-out 상한) ──
+
+test('caps: every fan-out dimension is bounded by a constant', () => {
+  assert.match(src, /const MAX_SECTIONS\s*=\s*\d+/, 'section count capped')
+  assert.match(src, /\.slice\(0,\s*MAX_SECTIONS\)/, 'outline sections sliced to the section cap')
+  assert.match(src, /const MAX_REDO\s*=\s*\d+/, 'redo bounded as a top-level cap (not buried in a stage)')
+  assert.match(src, /const AGENTS_MAX\s*=/, 'closed-form agent ceiling computed')
+  assert.match(src, /agentsMax:\s*AGENTS_MAX/, 'ceiling surfaced in stats')
+})
+
+test('robustness: citation-preservation guard against off-task edit agents', () => {
+  // 교정/재작성 에이전트가 이탈해 본문(과 인용 [n])을 날리면 초안으로 폴백한다.
+  assert.match(src, /const citeCount =/, 'citation counter inlined')
+  assert.match(src, /const degraded =/, 'degradation predicate against draft baseline')
+  assert.match(src, /md = drafted/, 'falls back to the draft when citations collapse')
+  assert.match(src, /citeCount\(fixed\.markdown\)\s*>=\s*citeCount\(md\)/, 'redo rejected if it drops citations')
+})
+
+test('cost: per-stage model tiering (not all on the session model)', () => {
+  assert.match(src, /const M_DESIGN\s*=/, 'design-tier model constant')
+  assert.match(src, /const M_WORK\s*=/, 'work-tier model constant')
+  assert.match(src, /const M_EDIT\s*=/, 'edit-tier model constant')
+  assert.match(src, /model:\s*M_WORK/, 'work tier applied (research/verify/draft)')
+  assert.match(src, /model:\s*M_EDIT/, 'edit tier applied (prose/redo)')
+  assert.match(src, /model:\s*M_DESIGN/, 'design tier applied (outline/naturalness)')
 })
 
 test('global-barrier: end-to-end structural invariants', () => {
