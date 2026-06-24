@@ -28,7 +28,7 @@ const mode = existingDoc ? 'edit' : 'generate'
 const docType = req.docType || 'reference'
 
 // ── 전역 캡 (deep-research식: 모든 fan-out 차원을 상수로 닫는다) ──
-// 닫힌 형식 천장 = 1(outline) + MAX_SEARCH_ANGLES(search) + MAX_FETCH(fetch) + 1(assign)
+// 닫힌 형식 천장 = 1(outline) + 1(angle-derivation) + MAX_SEARCH_ANGLES(search) + MAX_FETCH(fetch) + 1(assign)
 //   + MAX_SECTIONS×MAX_VERIFY_PER_SECTION×VOTES_PER_FACT(verify)
 //   + MAX_SECTIONS×(1 search + MAX_SALVAGE_FETCH + MAX_VERIFY_PER_SECTION×VOTES_PER_FACT)(salvage, 빈 섹션당)
 //   + MAX_SECTIONS×(1 draft + 1 prose + (MAX_REDO+1) review + MAX_REDO fix).
@@ -108,12 +108,6 @@ const OUTLINE_SCHEMA = {
         fromExisting: { type: 'string' } } } },
   },
 }
-const FACT_SCHEMA = { type: 'object', required: ['facts'], properties: { facts: { type: 'array',
-  items: { type: 'object', required: ['claim', 'source', 'quote', 'importance', 'sourceQuality'], properties: {
-    claim: { type: 'string' }, source: { type: 'string' },
-    quote: { type: 'string' },
-    importance: { type: 'string', enum: ['central', 'supporting', 'tangential'] },
-    sourceQuality: { enum: ['primary', 'secondary', 'blog', 'forum', 'unreliable'] } } } } } }
 const FACT_VERDICT_SCHEMA = { type: 'object', required: ['verified', 'reason'],
   properties: { verified: { type: 'boolean' }, reason: { type: 'string' } } }
 const EXTRACT_SCHEMA = { type: 'object', required: ['claims'], properties: { claims: { type: 'array',
@@ -203,7 +197,7 @@ if (mode === 'edit') {
 const audience = (req.audience || outline.audience || '기술 실무자').trim()
 const tone = (req.tone || outline.tone || '간결하고 정확한 레퍼런스체').trim()
 // 닫힌 형식 에이전트 천장 — 입력과 무관하게 캡으로만 결정된다(deep-research식 관측성).
-const AGENTS_MAX = 1 + MAX_SEARCH_ANGLES + MAX_FETCH + 1
+const AGENTS_MAX = 1 + 1 + MAX_SEARCH_ANGLES + MAX_FETCH + 1
   + sections.length * MAX_VERIFY_PER_SECTION * VOTES_PER_FACT
   + sections.length * (1 + MAX_SALVAGE_FETCH + MAX_VERIFY_PER_SECTION * VOTES_PER_FACT)
   + sections.length * (1 + 1 + (MAX_REDO + 1) + MAX_REDO)
@@ -270,6 +264,19 @@ if (mode === 'edit') {
   }
 }
 log(`수확 claim ${allClaims.length}건`)
+
+// claim-level dedup: normURL(source)+claim 키 기준 — 동일 출처·동일 주장 중복 병합
+const factKey = (f) => normURL(f.source) + '||' + (f.claim || '').trim().replace(/\s+/g, ' ')
+const seenClaim = new Set()
+const dedupedClaims = []
+let claimDupDropped = 0
+for (const f of allClaims) {
+  const k = factKey(f)
+  if (seenClaim.has(k)) { claimDupDropped++; continue }
+  seenClaim.add(k); dedupedClaims.push(f)
+}
+if (claimDupDropped) log(`중복 claim ${claimDupDropped}건 병합`)
+allClaims = dedupedClaims
 
 // ── 4. 배정 — claim을 선언 섹션에 배치 (배리어) ──
 phase('배정')
