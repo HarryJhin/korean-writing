@@ -26,16 +26,15 @@ const mode = existingDoc ? 'edit' : 'generate'
 const docType = req.docType || 'reference'
 
 // ── 전역 캡 (deep-research식: 모든 fan-out 차원을 상수로 닫는다) ──
-// 닫힌 형식 천장 = 1(outline) + MAX_SEARCH_ANGLES(search) + MAX_FETCH(fetch) + 1(assign)
-//   + MAX_SECTIONS×MAX_VERIFY_PER_SECTION×VOTES_PER_FACT(verify)
-//   + MAX_SECTIONS×(1 search + MAX_SALVAGE_FETCH + MAX_VERIFY_PER_SECTION×VOTES_PER_FACT)(salvage, 빈 섹션당)
-//   + MAX_SECTIONS×(1 draft + 1 prose + (MAX_REDO+1) review + MAX_REDO fix).
-// 입력(섹션 수·claim 수)과 무관하게 상한이 고정된다.
+// 닫힌 형식 천장 = 1(outline) + MAX_SECTIONS(research) + MAX_SECTIONS(edit extract)
+//   + MAX_VERIFY_TOTAL×VOTES_PER_FACT(verify) + MAX_SECTIONS×(1 draft+1 prose+(MAX_REDO+1) review+MAX_REDO fix).
+// 입력(섹션 수·사실 수)과 무관하게 상한이 고정된다 — 섹션 무캡이 천장을 뚫던 토큰 폭주를 차단.
 const MAX_SECTIONS = 8
-const MAX_VERIFY_PER_SECTION = 5
+const MAX_VERIFY_TOTAL = 13
 const VOTES_PER_FACT = 3
 const VERIFY_QUORUM = 2
 const MAX_REDO = 1
+const MAX_VERIFY_PER_SECTION = 5
 const MAX_SEARCH_ANGLES = 8
 const MAX_FETCH = 15
 const MAX_SALVAGE_FETCH = 5
@@ -201,10 +200,9 @@ if (mode === 'edit') {
 const audience = (req.audience || outline.audience || '기술 실무자').trim()
 const tone = (req.tone || outline.tone || '간결하고 정확한 레퍼런스체').trim()
 // 닫힌 형식 에이전트 천장 — 입력과 무관하게 캡으로만 결정된다(deep-research식 관측성).
-const AGENTS_MAX = 1 + MAX_SEARCH_ANGLES + MAX_FETCH + 1
-  + sections.length * MAX_VERIFY_PER_SECTION * VOTES_PER_FACT
-  + sections.length * (1 + MAX_SALVAGE_FETCH + MAX_VERIFY_PER_SECTION * VOTES_PER_FACT)
-  + sections.length * (1 + 1 + (MAX_REDO + 1) + MAX_REDO)
+const AGENTS_MAX = 1 + sections.length + (mode === 'edit' ? sections.length : 0) +
+  MAX_VERIFY_TOTAL * VOTES_PER_FACT +
+  sections.length * (1 + 1 + (MAX_REDO + 1) + MAX_REDO)
 log(`아웃라인 ${sections.length}개 섹션 · 독자: ${audience} · 에이전트 천장 ${AGENTS_MAX}`)
 
 // ── 2. 섹션별 리서치 (pipeline, 무배리어) — 검증은 전역 배리어로 분리 ──
@@ -268,7 +266,7 @@ const impRank = { central: 0, supporting: 1, tangential: 2 }
 const qualRank = { primary: 0, secondary: 1, blog: 2, forum: 3, unreliable: 4 }
 const rankedFacts = [...dedupedFacts]
   .sort((a, b) => (impRank[a.importance] - impRank[b.importance]) || (qualRank[a.sourceQuality] - qualRank[b.sourceQuality]))
-  .slice(0, MAX_SECTIONS * MAX_VERIFY_PER_SECTION)
+  .slice(0, MAX_VERIFY_TOTAL)
 const capDropped = dedupedFacts.length - rankedFacts.length
 if (capDropped > 0) log(`전역 캡: ${dedupedFacts.length}건 중 상위 ${rankedFacts.length}건만 검증(${capDropped}건 컷)`)
 
@@ -438,7 +436,7 @@ return {
     s1Remaining: s1remaining.length,
     agentCalls,
     agentsMax: AGENTS_MAX,
-    caps: { MAX_SECTIONS, MAX_VERIFY_PER_SECTION, VOTES_PER_FACT, MAX_REDO },
+    caps: { MAX_SECTIONS, MAX_VERIFY_TOTAL, VOTES_PER_FACT, MAX_REDO },
     models: { design: M_DESIGN, work: M_WORK, edit: M_EDIT },
   },
 }
