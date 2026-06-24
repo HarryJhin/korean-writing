@@ -25,6 +25,18 @@ const sourcePath = (req.sourcePath || '').trim()
 const mode = existingDoc ? 'edit' : 'generate'
 const docType = req.docType || 'reference'
 
+// ── 전역 배리어 상수 ──
+const MAX_VERIFY_TOTAL = 30
+const VOTES_PER_FACT = 3
+const VERIFY_QUORUM = 2
+// deep-research wf의 normURL 복제: www·trailing slash 제거 후 소문자. 출처 dedup 키.
+const normURL = (u) => {
+  try {
+    const p = new URL(u)
+    return (p.hostname.replace(/^www\./, '') + p.pathname.replace(/\/$/, '')).toLowerCase()
+  } catch { return (u || '').toLowerCase() }
+}
+
 // ── 인라인 인제스트 (lib/ingest.js와 동일 로직 복제 — 자기완결, 동기화 대상) ──
 const SOURCE_HEADING_INLINE = /^##\s+(출처|references)\s*$/i
 const extractTitleInline = (md) => {
@@ -80,7 +92,10 @@ const OUTLINE_SCHEMA = {
   },
 }
 const FACT_SCHEMA = { type: 'object', required: ['facts'], properties: { facts: { type: 'array',
-  items: { type: 'object', required: ['claim', 'source'], properties: { claim: { type: 'string' }, source: { type: 'string' } } } } } }
+  items: { type: 'object', required: ['claim', 'source', 'importance', 'sourceQuality'], properties: {
+    claim: { type: 'string' }, source: { type: 'string' },
+    importance: { type: 'string', enum: ['central', 'supporting', 'tangential'] },
+    sourceQuality: { enum: ['primary', 'secondary', 'blog', 'forum', 'unreliable'] } } } } } }
 const FACT_VERDICT_SCHEMA = { type: 'object', required: ['verified', 'reason'],
   properties: { verified: { type: 'boolean' }, reason: { type: 'string' } } }
 const EXTRACT_SCHEMA = { type: 'object', required: ['claims'], properties: { claims: { type: 'array',
@@ -146,6 +161,7 @@ const outline = await agent(
   `- sections: 필수 섹션(개요, 항목별 레퍼런스, 에러/예외)과 각 섹션의 리서치 질문 1~4개`,
   { schema: OUTLINE_SCHEMA, label: 'scope:outline' }
 )
+if (!outline || !Array.isArray(outline.sections) || outline.sections.length === 0) return { error: '아웃라인 에이전트가 결과를 반환하지 않았다(스코프 단계 실패).', topic, mode }
 const sections = outline.sections || []
 if (mode === 'edit') {
   const kept = new Set(sections.map(s => s.fromExisting).filter(Boolean))
@@ -156,17 +172,19 @@ const audience = (req.audience || outline.audience || '기술 실무자').trim()
 const tone = (req.tone || outline.tone || '간결하고 정확한 레퍼런스체').trim()
 log(`아웃라인 ${sections.length}개 섹션 · 독자: ${audience}`)
 
-// ── 2~3. 섹션별 리서치 → 사실 적대 검증 (pipeline, 배리어 없음) ──
+// ── 2. 섹션별 리서치 (pipeline, 무배리어) — 검증은 전역 배리어로 분리 ──
 const researched = await pipeline(
   sections,
   async (section) => {
-    const researched = await agent(
+    const r = await agent(
       `너는 기술 사실 조사자다. 목표: 검증 가능한 출처로 뒷받침되는 사실만 모은다.\n` +
       `다음 리서치 질문들에 대해 웹·공식 문서를 조사해 사실을 수집한다. 각 사실에 출처 URL을 단다. 확인 안 되면 포함하지 말 것(날조 금지).\n` +
+      `각 사실에 importance(central/supporting/tangential)와 sourceQuality(primary/secondary/blog/forum/unreliable)를 매긴다. ` +
+      `공식 문서·1차 자료=primary, 보도=secondary, 개인 블로그=blog, 포럼=forum, 신뢰 불가=unreliable.\n` +
       `섹션: ${section.title}\n질문:\n${(section.researchQuestions || []).map(q => '- ' + q).join('\n')}`,
       { schema: FACT_SCHEMA, label: `research:${section.title}`, phase: '리서치' }
     )
-    let facts = researched.facts || []
+    let facts = (r && r.facts) || []
     if (mode === 'edit' && section.fromExisting) {
       const orig = existingSections.find(s => s.title === section.fromExisting)
       if (orig && orig.markdown) {
@@ -177,59 +195,96 @@ const researched = await pipeline(
           { schema: EXTRACT_SCHEMA, label: `extract:${section.title}`, phase: '리서치' }
         )
         let unsourcedDropped = 0
-        for (const c of (extracted.claims || [])) {
-          const src = c.citation != null ? (existingSourceMap.get(c.citation) || '') : ''
-          if (!src) { unsourcedDropped++; continue }
-          facts.push({ claim: c.claim, source: src, _origin: 'existing' })
+        for (const c of ((extracted && extracted.claims) || [])) {
+          const srcUrl = c.citation != null ? (existingSourceMap.get(c.citation) || '') : ''
+          if (!srcUrl) { unsourcedDropped++; continue }
+          facts.push({ claim: c.claim, source: srcUrl, importance: 'supporting', sourceQuality: 'secondary', _origin: 'existing' })
         }
         if (unsourcedDropped) log(`${section.title}: 출처 없는 원본 주장 ${unsourcedDropped}건 기각(검증 전)`)
       }
     }
     return { section, facts }
-  },
-  async (r) => {
-    const verified = []
-    for (const fact of r.facts) {
-      // Workflow 런타임 계약: parallel은 실패한 thunk(agent 오류 포함)를 null로 resolve하며
-      // 절대 reject하지 않는다. 따라서 검증자 하나가 실패해도 파이프라인이 중단되지 않고,
-      // 아래 votes.filter(Boolean)가 실패 표를 제외한다(부분 결과 + 정족수 판정 유지).
-      const votes = await parallel([0, 1, 2].map(i => () =>
-        agent(
-          `너는 기술 문서 사실 검증자다. 목표: 출처가 주장을 실제로 뒷받침하는지 적대적으로 가린다.\n` +
-          `시그니처·파라미터·기본값·버전 같은 기술적 사실은 특히 엄격히 본다. ` +
-          `출처에서 직접 확인되지 않으면 verified=false. 불확실하면 기각이 기본값이다.\n` +
-          `주장: ${fact.claim}\n출처: ${fact.source}`,
-          { schema: FACT_VERDICT_SCHEMA, label: `verify:${r.section.title}#${i}`, phase: '사실 검증' }
-        )
-      ))
-      if (votes.filter(Boolean).filter(v => v.verified).length >= 2) verified.push(fact)
-    }
-    if (mode === 'edit') {
-      const exCand = r.facts.filter(f => f._origin === 'existing').length
-      const exKept = verified.filter(f => f._origin === 'existing').length
-      if (exCand) log(`${r.section.title}: 원본 주장 ${exKept}/${exCand} 검증 통과(${exCand - exKept}건 탈락 드롭)`)
-    }
-    log(`${r.section.title}: 사실 ${verified.length}/${r.facts.length} 확정`)
-    return { section: r.section, facts: verified }
   }
 )
 
-// ── 전역 인용 번호 부여 (논문식 [n] 인용 + 출처 목록) ──
+// ═══ 배리어: 전 섹션 fact를 전역 풀로 평탄화 (sectionTitle 태그) ═══
+phase('사실 검증')
+const globalFacts = researched.filter(Boolean).flatMap(
+  r => (r.facts || []).map(f => ({ ...f, sectionTitle: r.section.title }))
+)
+const sectionByTitle = new Map(researched.filter(Boolean).map(r => [r.section.title, r.section]))
+log(`전역 풀: ${globalFacts.length}건 (${sectionByTitle.size}개 섹션)`)
+
+// dedup: 같은 (정규화 출처 + 정규화 주장)은 1건으로. (E·F)
+const factKey = (f) => normURL(f.source) + '||' + (f.claim || '').trim().replace(/\s+/g, ' ')
+const seenFact = new Set()
+const dedupedFacts = []
+let dedupDropped = 0
+for (const f of globalFacts) {
+  const k = factKey(f)
+  if (seenFact.has(k)) { dedupDropped++; continue }
+  seenFact.add(k); dedupedFacts.push(f)
+}
+if (dedupDropped) log(`중복 사실 ${dedupDropped}건 병합`)
+
+// 랭킹 → 전역 캡. (A) 검증 호출 수를 fact 총량과 무관하게 상한으로 묶는다.
+const impRank = { central: 0, supporting: 1, tangential: 2 }
+const qualRank = { primary: 0, secondary: 1, blog: 2, forum: 3, unreliable: 4 }
+const rankedFacts = [...dedupedFacts]
+  .sort((a, b) => (impRank[a.importance] - impRank[b.importance]) || (qualRank[a.sourceQuality] - qualRank[b.sourceQuality]))
+  .slice(0, MAX_VERIFY_TOTAL)
+const capDropped = dedupedFacts.length - rankedFacts.length
+if (capDropped > 0) log(`전역 캡: ${dedupedFacts.length}건 중 상위 ${rankedFacts.length}건만 검증(${capDropped}건 컷)`)
+
+// N표 grounded 적대 검증. parallel은 실패 thunk(agent 오류 포함)를 null로 resolve하며 절대
+// reject하지 않는다(런타임 계약) → 아래 filter(Boolean)가 실패 표를 abstain으로 제외한다. (B·D)
+const verifyOne = (fact) => parallel(
+  Array.from({ length: VOTES_PER_FACT }, (_, i) => () =>
+    agent(
+      `너는 기술 문서 사실 검증자다. 목표: 출처가 주장을 실제로 뒷받침하는지 적대적으로 가린다.\n` +
+      `1) WebFetch로 아래 출처 URL을 직접 열어 본문에서 주장을 확인한다. ` +
+      `2) 의심되면 WebSearch로 모순·반증 증거를 찾는다. ` +
+      `3) 시그니처·파라미터·기본값·버전 같은 기술적 사실은 특히 엄격히 본다.\n` +
+      `출처에서 직접 확인되지 않으면 verified=false. 불확실하면 기각이 기본값이다.\n` +
+      `주장: ${fact.claim}\n출처: ${fact.source} (${fact.sourceQuality})`,
+      { schema: FACT_VERDICT_SCHEMA, label: `verify:${fact.sectionTitle}#${i}`, phase: '사실 검증' }
+    )
+  )
+).then(votes => {
+  const valid = votes.filter(Boolean)
+  const verifiedCount = valid.filter(v => v.verified).length
+  // 정족수: 유효표가 정족수 이상이고 verified가 정족수 이상이어야 통과. 과다 abstain → 통과 불가.
+  return (valid.length >= VERIFY_QUORUM && verifiedCount >= VERIFY_QUORUM) ? fact : null
+})
+
+const verdicts = await parallel(rankedFacts.map(f => () => verifyOne(f)))
+const verifiedFacts = verdicts.filter(Boolean)
+const verifyCalls = rankedFacts.length * VOTES_PER_FACT
+log(`검증: ${rankedFacts.length}건 중 ${verifiedFacts.length}건 확정`)
+
+// ── 검증 통과분을 섹션으로 재귀속 (전역 → 섹션 왕복) ──
 // 게이트3: 확정 사실이 0건인 섹션은 초안에 넘기지 않는다. 검증을 통과한 사실이 없으면
-// 작가는 '출처 필요'만 가득한 빈 껍데기를 쓰게 되므로, 그 전에 드롭한다.
-const nonEmpty = researched.filter(Boolean)
-const valid = nonEmpty.filter(r => (r.facts || []).length > 0)
-const emptyDropped = nonEmpty.filter(r => (r.facts || []).length === 0).map(r => r.section.title)
+// 작가는 '출처 필요'만 가득한 빈 껍데기를 쓰게 되므로, 그 전에 드롭한다. 원래 섹션 순서 보존.
+const factsBySection = new Map()
+for (const f of verifiedFacts) {
+  if (!factsBySection.has(f.sectionTitle)) factsBySection.set(f.sectionTitle, [])
+  factsBySection.get(f.sectionTitle).push(f)
+}
+const valid = sections
+  .map(s => ({ section: sectionByTitle.get(s.title) || s, facts: factsBySection.get(s.title) || [] }))
+  .filter(r => r.facts.length > 0)
+const emptyDropped = sections.map(s => s.title).filter(t => !(factsBySection.get(t) || []).length)
 if (emptyDropped.length) log(`사실 0건으로 드롭된 섹션 ${emptyDropped.length}개: ${emptyDropped.join(', ')}`)
+// 출처 번호 부여 — normURL 기준 dedup(www·trailing slash 차이 통합). (E)
 const sourceList = []
 const sourceNum = new Map()
 for (const r of valid) {
   for (const f of r.facts) {
-    const u = (f.source || '').trim()
-    if (u && !sourceNum.has(u)) sourceNum.set(u, sourceList.push(u)) // push 반환값 = 1-based 번호
+    const key = normURL(f.source)
+    if (key && !sourceNum.has(key)) { sourceList.push((f.source || '').trim()); sourceNum.set(key, sourceList.length) }
   }
 }
-const cite = (src) => sourceNum.get((src || '').trim()) || '?'
+const cite = (src) => sourceNum.get(normURL(src)) || '?'
 
 // ── 4~6. 섹션별 초안 → 문체교정 → 자연스러움 검증 (pipeline) ──
 const finished = await pipeline(
@@ -245,13 +300,14 @@ const finished = await pipeline(
       : '') +
     `섹션 제목: ${r.section.title}\n확정 사실(번호=출처):\n${r.facts.map(f => `- [${cite(f.source)}] ${f.claim} (출처: ${f.source})`).join('\n') || '(없음)'}`,
     { schema: SECTION_SCHEMA, label: `draft:${r.section.title}`, phase: '초안' }
-  ).then(s => ({ ...r, draft: s })),
-  (r) => agent(
+  ).then(s => s ? ({ ...r, draft: s }) : null),
+  (r) => !r ? null : agent(
     `너는 한국어 기술문서 에디터다. 목표: 아래 독자·톤을 유지하며 한국어 문체를 교정한다.\n` +
     `독자: ${audience}\n톤앤매너: ${tone}\n기준:\n${PROSE_RULES}\n교정된 본문 Markdown만 반환한다 — 변경 내역·설명·메모를 본문에 넣지 마라.\n\n${r.draft.markdown}`,
     { schema: SECTION_SCHEMA, label: `prose:${r.section.title}`, phase: '문체 교정' }
-  ).then(s => ({ ...r, edited: s })),
+  ).then(s => s ? ({ ...r, edited: s }) : null),
   async (r) => {
+    if (!r) return null
     // 게이트1: 검사→수정→재검사의 폐루프. 재작성본을 검증 없이 반환하지 않고,
     //          루프 상단으로 돌아가 다시 판정한다. MAX_REDO로 무한루프를 막는다.
     // 게이트2: S1(em dash·이모지·세미콜론·이중피동)은 결정론적 0/1 하드 게이트로,
@@ -289,6 +345,13 @@ const finished = await pipeline(
 // ── 7. 조립 ──
 phase('조립')
 const ordered = finished.filter(Boolean)
+if (ordered.length === 0) {
+  return {
+    error: '확정 사실이 있는 섹션이 없어 문서를 만들지 못했다.',
+    topic, mode,
+    diagnostics: { sections: sections.length, globalFacts: globalFacts.length, verified: verifiedFacts.length, emptyDropped },
+  }
+}
 if (mode === 'edit') {
   const reusedCount = sections.filter(s => s.fromExisting).length
   const newCount = sections.length - reusedCount
@@ -309,4 +372,21 @@ const finalDoc = `# ${topic}\n\n${body}${refList}`
 const s1remaining = s1Violations(finalDoc)
 log(`완성: ${ordered.length}개 섹션, 출처 ${sourceList.length}건, 잔여 S1 ${s1remaining.length}건${s1remaining.length ? ` (${s1remaining.join(', ')})` : ''}`)
 
-return { markdown: finalDoc, sections: ordered.length, sources: sourceList }
+// 에이전트 호출 추정: outline 1 + research(섹션수) + 검증 + 초안/문체/자연스러움(섹션×3 근사).
+const agentCalls = 1 + sections.length + verifyCalls + (ordered.length * 3)
+return {
+  markdown: finalDoc,
+  sections: ordered.length,
+  sources: sourceList,
+  stats: {
+    sectionsPlanned: sections.length,
+    globalFacts: globalFacts.length,
+    dedupDropped,
+    capDropped: Math.max(0, capDropped),
+    verified: verifiedFacts.length,
+    sectionsDropped: emptyDropped.length,
+    sourcesCited: sourceList.length,
+    s1Remaining: s1remaining.length,
+    agentCalls,
+  },
+}

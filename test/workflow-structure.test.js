@@ -54,7 +54,7 @@ test('gate2: S1 is a deterministic runtime hard gate ANDed with the LLM verdict'
 })
 
 test('gate3: sections with zero verified facts are dropped before drafting', () => {
-  assert.match(src, /\.filter\(r => \(r\.facts \|\| \[\]\)\.length > 0\)/, 'empty-fact sections filtered out')
+  assert.match(src, /\.filter\(r => r\.facts\.length > 0\)/, 'empty-fact sections filtered after regroup')
   assert.match(src, /사실 0건으로 드롭된 섹션/, 'drop is logged')
 })
 
@@ -85,4 +85,60 @@ test('edit mode: existing claims are extracted and re-verified (not blind-copied
 
 test('edit mode: draft seeds reused sections with original prose', () => {
   assert.match(src, /기존 본문|표현·구성|seed/i, 'original prose passed to drafter as a preservation seed')
+})
+
+// ── 전역 배리어 재구성 ──
+
+test('global-barrier: fact schema carries ranking metadata', () => {
+  assert.match(src, /importance:\s*\{\s*(type:\s*['"]string['"],\s*)?enum:\s*\[['"]central['"]/, 'fact has importance enum')
+  assert.match(src, /sourceQuality:\s*\{\s*enum:\s*\[['"]primary['"]/, 'fact has sourceQuality enum')
+})
+
+test('global-barrier: verify caps and normURL inlined', () => {
+  assert.match(src, /const MAX_VERIFY_TOTAL\s*=\s*\d+/, 'MAX_VERIFY_TOTAL defined')
+  assert.match(src, /const VOTES_PER_FACT\s*=\s*\d+/, 'VOTES_PER_FACT defined')
+  assert.match(src, /const VERIFY_QUORUM\s*=\s*\d+/, 'VERIFY_QUORUM defined')
+  assert.match(src, /const normURL\s*=/, 'normURL inlined')
+})
+
+test('global-barrier: research is a barrier that builds a global fact pool', () => {
+  assert.match(src, /const researched = await pipeline\(/, 'research still uses pipeline for fan-out')
+  assert.match(src, /globalFacts/, 'global fact pool assembled')
+  assert.match(src, /sectionTitle/, 'facts tagged with sectionTitle for regrouping')
+  assert.doesNotMatch(src, /phase:\s*['"]사실 검증['"][\s\S]{0,400}?return\s*\{\s*section:\s*r\.section/, 'verify no longer nested per-section')
+})
+
+test('global-barrier: pool is deduped, ranked, and capped', () => {
+  assert.match(src, /rankedFacts/, 'ranked/capped pool produced')
+  assert.match(src, /\.slice\(0,\s*MAX_VERIFY_TOTAL\)/, 'capped to MAX_VERIFY_TOTAL')
+  assert.match(src, /impRank/, 'importance ranking')
+  assert.match(src, /qualRank/, 'source-quality ranking')
+})
+
+test('global-barrier: verification is grounded and quorum-gated', () => {
+  assert.match(src, /WebFetch/, 'verifier instructed to re-fetch the source')
+  assert.match(src, /반증|contradicting/i, 'verifier hunts counter-evidence')
+  assert.match(src, /valid\.length\s*>=\s*VERIFY_QUORUM/, 'quorum of valid votes required (abstain handled)')
+})
+
+test('resilience: outline null-guarded and empty-result salvage', () => {
+  assert.match(src, /if\s*\(!outline[\s\S]{0,80}return/, 'outline null guard returns diagnostic')
+  assert.match(src, /ordered\.length === 0[\s\S]{0,200}return/, 'all-dropped salvage path')
+})
+
+test('observability: final return reports agentCalls and drop counts', () => {
+  assert.match(src, /agentCalls/, 'agent call estimate returned')
+  assert.match(src, /stats:\s*\{/, 'stats object in final return')
+})
+
+test('global-barrier: end-to-end structural invariants', () => {
+  // 검증 호출이 fact 총량이 아니라 캡에 묶인다.
+  assert.match(src, /verifyCalls\s*=\s*rankedFacts\.length\s*\*\s*VOTES_PER_FACT/, 'verify calls bounded by cap')
+  // 7 phases 유지.
+  for (const p of ['스코프', '리서치', '사실 검증', '초안', '문체 교정', '자연스러움 검증', '조립']) {
+    assert.ok(src.includes(p), `phase ${p} present`)
+  }
+  // 자기완결 불변식 재확인.
+  assert.ok(!/\bimport\s/.test(src) && !/\brequire\(/.test(src), 'still self-contained')
+  assert.ok(!/Date\.now|Math\.random/.test(src), 'no forbidden APIs')
 })
