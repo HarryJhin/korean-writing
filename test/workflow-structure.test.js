@@ -14,9 +14,9 @@ test('workflow body is syntactically valid (workflow-runtime form)', () => {
   new vm.Script(wrapped) // SyntaxError 시 throw
 })
 
-test('workflow declares meta and 7 phases', () => {
+test('workflow declares meta and the pull-restructure phases', () => {
   assert.match(src, /export const meta/)
-  for (const p of ['스코프', '리서치', '사실 검증', '초안', '문체 교정', '자연스러움 검증', '조립']) {
+  for (const p of ['스코프', '검색', '수확', '배정', '사실 검증', '초안', '문체 교정', '자연스러움 검증', '조립']) {
     assert.ok(src.includes(p), `phase ${p} missing`)
   }
 })
@@ -53,9 +53,11 @@ test('gate2: S1 is a deterministic runtime hard gate ANDed with the LLM verdict'
   assert.match(src, /review\.pass\s*&&\s*review\.fidelityOk\s*&&\s*s1\.length === 0/, 'S1 ANDed into pass condition')
 })
 
-test('gate3: sections with zero verified facts are dropped before drafting', () => {
-  assert.match(src, /\.filter\(r => r\.facts\.length > 0\)/, 'empty-fact sections filtered after regroup')
-  assert.match(src, /사실 0건으로 드롭된 섹션/, 'drop is logged')
+test('empty sections are salvaged then caveat-stubbed, not dropped', () => {
+  assert.match(src, /phase\('사실 검증'\)/, 'verify/salvage phase present')
+  assert.match(src, /salvageSection/, 'salvage step present')
+  assert.match(src, /검증된 출처를 확보하지 못해/, 'caveat stub text present')
+  assert.ok(!/\.filter\(r => r\.facts\.length > 0\)/.test(src), 'empty-fact sections must NOT be filtered out (no drop)')
 })
 
 // ── edit 모드 ──
@@ -94,25 +96,29 @@ test('global-barrier: fact schema carries ranking metadata', () => {
   assert.match(src, /sourceQuality:\s*\{\s*enum:\s*\[['"]primary['"]/, 'fact has sourceQuality enum')
 })
 
-test('global-barrier: verify caps and normURL inlined', () => {
-  assert.match(src, /const MAX_VERIFY_TOTAL\s*=\s*\d+/, 'MAX_VERIFY_TOTAL defined')
+test('verify caps and normURL inlined', () => {
+  assert.match(src, /const MAX_VERIFY_PER_SECTION\s*=\s*\d+/, 'per-section verify cap defined')
   assert.match(src, /const VOTES_PER_FACT\s*=\s*\d+/, 'VOTES_PER_FACT defined')
   assert.match(src, /const VERIFY_QUORUM\s*=\s*\d+/, 'VERIFY_QUORUM defined')
   assert.match(src, /const normURL\s*=/, 'normURL inlined')
+  assert.ok(!/MAX_VERIFY_TOTAL/.test(src), 'global verify cap removed')
 })
 
-test('global-barrier: research is a barrier that builds a global fact pool', () => {
-  assert.match(src, /const researched = await pipeline\(/, 'research still uses pipeline for fan-out')
-  assert.match(src, /globalFacts/, 'global fact pool assembled')
-  assert.match(src, /sectionTitle/, 'facts tagged with sectionTitle for regrouping')
-  assert.doesNotMatch(src, /phase:\s*['"]사실 검증['"][\s\S]{0,400}?return\s*\{\s*section:\s*r\.section/, 'verify no longer nested per-section')
+test('harvest: search→fetch builds a flat claim pool', () => {
+  assert.match(src, /phase\('검색'\)/, 'search phase present')
+  assert.match(src, /phase\('수확'\)/, 'fetch phase present')
+  assert.match(src, /const fetched = await pipeline\(/, 'fetch uses pipeline for fan-out')
+  assert.match(src, /allClaims/, 'flat claim pool assembled')
+  assert.ok(!/globalFacts/.test(src), 'no pre-verify global fact pool (pull, not push)')
 })
 
-test('global-barrier: pool is deduped, ranked, and capped', () => {
-  assert.match(src, /rankedFacts/, 'ranked/capped pool produced')
-  assert.match(src, /\.slice\(0,\s*MAX_VERIFY_TOTAL\)/, 'capped to MAX_VERIFY_TOTAL')
-  assert.match(src, /impRank/, 'importance ranking')
-  assert.match(src, /qualRank/, 'source-quality ranking')
+test('claims are assigned to declared sections then per-section ranked/capped', () => {
+  assert.match(src, /phase\('배정'\)/, 'assign phase present')
+  assert.match(src, /const groupAndCap =/, 'inline groupAndCap mirror present')
+  assert.match(src, /IMP_RANK/, 'importance ranking')
+  assert.match(src, /QUAL_RANK/, 'source-quality ranking')
+  assert.match(src, /MAX_VERIFY_PER_SECTION/, 'per-section cap applied')
+  assert.ok(!/rankedFacts/.test(src), 'no global ranked-and-sliced pool')
 })
 
 test('global-barrier: verification is grounded (quote-based) and quorum-gated', () => {
@@ -167,24 +173,12 @@ test('cost: per-stage model tiering (not all on the session model)', () => {
   assert.match(src, /model:\s*M_DESIGN/, 'design tier applied (outline/naturalness)')
 })
 
-test('global-barrier: end-to-end structural invariants', () => {
-  // 검증 호출이 fact 총량이 아니라 캡에 묶인다.
-  assert.match(src, /verifyCalls\s*=\s*rankedFacts\.length\s*\*\s*VOTES_PER_FACT/, 'verify calls bounded by cap')
-  // 7 phases 유지.
-  for (const p of ['스코프', '리서치', '사실 검증', '초안', '문체 교정', '자연스러움 검증', '조립']) {
+test('end-to-end structural invariants (pull-restructure)', () => {
+  assert.match(src, /verifySection/, 'verification runs per section')
+  assert.ok(!/verifyCalls\s*=\s*rankedFacts\.length/.test(src), 'verify calls no longer bound to a global ranked pool')
+  for (const p of ['스코프', '검색', '수확', '배정', '사실 검증', '초안', '문체 교정', '자연스러움 검증', '조립']) {
     assert.ok(src.includes(p), `phase ${p} present`)
   }
-  // 자기완결 불변식 재확인.
   assert.ok(!/\bimport\s/.test(src) && !/\brequire\(/.test(src), 'still self-contained')
   assert.ok(!/Date\.now|Math\.random/.test(src), 'no forbidden APIs')
-})
-
-test('caps: pull-restructure constants and schemas added', () => {
-  assert.match(src, /const MAX_VERIFY_PER_SECTION = 5/, 'per-section verify cap present')
-  assert.match(src, /const MAX_SEARCH_ANGLES =/, 'search angle cap present')
-  assert.match(src, /const MAX_FETCH =/, 'fetch cap present')
-  assert.match(src, /const MAX_SALVAGE_FETCH =/, 'salvage fetch cap present')
-  assert.match(src, /const ANGLES_SCHEMA =/, 'angles schema present')
-  assert.match(src, /const CLAIM_SCHEMA =/, 'claim schema present')
-  assert.match(src, /const ASSIGN_SCHEMA =/, 'assign schema present')
 })
