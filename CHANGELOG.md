@@ -9,6 +9,20 @@
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-25
+
+### Changed
+- **검증 구조를 전역 캡(push) → claim 선언-섹션 배정 후 per-section 검증(pull 수확)으로 재설계**: 전역 `MAX_VERIFY_TOTAL(13)` 단일 캡이 8섹션을 두고 *전역* 랭킹 경쟁시켜 상위 1~2섹션이 검증 슬롯을 독식하고 나머지 섹션이 0건으로 굶던 구조를 제거. 이제 claim을 먼저 선언 섹션에 배정한 뒤 섹션마다 독립적으로 `MAX_VERIFY_PER_SECTION(5)`까지 검증한다 — 섹션이 서로의 검증 예산을 못 뺏는다. 실측 붕괴(AWS WAF 주제: 8섹션 → 검증 후 2섹션)의 근본 원인(섹션 기아 → 게이트3 드롭) 차단.
+- **딥리서치식 전역 수확 단계 도입**: 주제 전체에서 검색 앵글(`MAX_SEARCH_ANGLES(8)`)을 도출해 병렬 검색 → 상위 소스 fetch(`MAX_FETCH(15)`)로 claim을 한 풀(`allClaims`)에 평탄화한 뒤, 배정 단계가 선언 섹션으로 분배한다. 기존 섹션-로컬 리서치를 대체.
+
+### Added
+- **Salvage 단계**: 배정·검증 후에도 0건인 섹션은 그 섹션 주제로 검색+fetch 1회 재시도 후 재검증한다(`MAX_SALVAGE_FETCH(5)`). 그래도 0건이면 섹션을 드롭하지 않고 제목 + "검증된 출처를 확보하지 못해" caveat 스텁으로 골격을 보존한다 — 빈 껍데기 드롭으로 인한 문서 붕괴를 막는다.
+- `lib/assign.js` — claim→섹션 결정론적 배정·캡 함수 + 단위 테스트.
+- `stats`에 `searchAngles`·`fetched`·`harvestedClaims`·`assignedDropped`·`salvageFired`·`salvageRecovered`·`caveatSections`를 노출(pull 수확·배정·salvage 관측).
+
+### Fixed
+- `AGENTS_MAX` 닫힌-형식 천장에 angle-derivation 호출 누락(off-by-one) 보정 — 천장이 실제 최악 호출 수를 엄밀히 상회하도록.
+
 ## [0.4.0] - 2026-06-24
 
 ### Changed
