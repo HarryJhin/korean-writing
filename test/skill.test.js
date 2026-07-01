@@ -32,3 +32,33 @@ test('pre-flight skill documents the edit branch', () => {
   assert.ok(skill.includes('existingDoc'), 'explains passing existing doc content as args')
   assert.ok(/덮어쓰|revised|diff/i.test(skill), 'states the no-overwrite output policy')
 })
+
+// ── fix-korean-prose (경량 문체 교정 스킬) ──
+const prose = readFileSync(new URL('../skills/fix-korean-prose/SKILL.md', import.meta.url), 'utf8')
+
+test('fix-korean-prose: 유효한 프론트매터', () => {
+  assert.match(prose, /^---/)
+  assert.match(prose, /name:\s*fix-korean-prose/)
+  assert.match(prose, /description:\s*\S+/)
+})
+
+test('fix-korean-prose: 문서 생성이 아닌 기존 텍스트 교정임을 명시(write-korean-docs와 구분)', () => {
+  assert.ok(/문체\s*교정/.test(prose), '문체 교정 목적 명시')
+  assert.ok(!prose.includes('/korean-docs'), '무거운 생성 워크플로우를 띄우지 않는다')
+})
+
+test('fix-korean-prose: S1을 Bash로 결정론 강제', () => {
+  assert.ok(prose.includes('prose-cli.js'), 'CLI 래퍼를 호출한다')
+  assert.ok(/CLAUDE_PLUGIN_ROOT/.test(prose), '플러그인 루트 경로로 호출')
+  assert.ok(/nvm use/.test(prose), 'node 실행 전 nvm use 규약')
+})
+
+test('fix-korean-prose: 출력 정책(텍스트 표시 / 파일 diff·확인 후 덮어쓰기)', () => {
+  assert.ok(/diff/i.test(prose), '파일 모드 diff 표시')
+  assert.ok(/덮어쓰/.test(prose), '덮어쓰기 명시 확인 정책')
+})
+
+test('fix-korean-prose: 사실·인용 보존 규칙 인라인', () => {
+  assert.ok(/날조 금지/.test(prose), 'no-fabrication 규칙')
+  assert.ok(/이중 피동/.test(prose), 'S1 문체 규칙 인라인')
+})
