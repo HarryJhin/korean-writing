@@ -1,5 +1,7 @@
 # Changelog
 
+<!-- korean-writing:ignore -->
+
 이 프로젝트의 주요 변경 사항을 기록한다.
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르고,
 버전 체계는 [SemVer](https://semver.org/lang/ko/)를 따른다.
@@ -8,6 +10,37 @@
 버전을 범프할 때마다 이 파일에 항목을 추가한다.
 
 ## [Unreleased]
+
+## [1.0.0] - 2026-07-02
+
+### Changed
+- **정체성 피벗: 문서 생성 파이프라인 → 한국어 글쓰기 지침 플러그인.** "문서 생성은
+  deep-research로 충분하다. 한국어 답변 생성을 지침(스킬·훅)으로 제어하는 게 맞다"는
+  리뷰를 수용했다. 플러그인·repo 이름을 `korean-writing`으로 변경.
+- 스킬 개명·재구성: `fix-korean-prose` → `fixing-korean-text` (공식 gerund 네이밍,
+  "산문" 용어 제거). 규칙 본문은 신설 `writing-korean`으로 이동하고 교정 스킬은
+  절차만 남김 (규칙 SoT 단일화, 복제 동기화 지점 3곳 → 2곳).
+
+### Added
+- `writing-korean` 지침 스킬: 한국어 글쓰기 규칙 SoT (R1 절대 금지 S1, R2 번역투,
+  R3 문장 구조, R4 슬롭 회피, R5 일관성·정직. 3표 적대 검증 딥리서치 근거 부기).
+- PostToolUse 훅(`check-written-file.mjs`): 한글 텍스트 파일(.md/.markdown/.txt) 저장 시
+  S1 결정론 검사, 위반 피드백. `korean-writing:ignore` 마커로 파일 단위 opt-out.
+- Stop 훅(`check-response.mjs`): 한국어 응답(한글 20자 이상)의 S1 위반 시 1회 재작성
+  유도. session+prompt 마커 파일로 무한 루프 방지.
+- 규칙 근거 리포트 2건을 repo에 포함 (`docs/작문-딥리서치-리포트*.md`).
+
+### Removed
+- `/korean-docs` 워크플로우(생성·편집 파이프라인)와 `write-korean-docs` pre-flight 스킬.
+- SessionStart 워크플로우 설치 훅(#66032 워크어라운드). 워크플로우 소멸로 불필요.
+- `lib/assign.js`, `lib/ingest.js` (워크플로우 전용).
+- INSTALL.md. 표준 플러그인 설치로 단순해져 README로 통합.
+
+### Migration
+- 기존 korean-docs 설치자는 재설치가 필요하다:
+  `/plugin marketplace add HarryJhin/korean-writing` 후
+  `/plugin install korean-writing@korean-writing-marketplace`.
+- `~/.claude/workflows/korean-docs.js`는 더 이상 관리되지 않는다. 수동 삭제를 권장한다.
 
 ## [0.5.0] - 2026-06-25
 
@@ -110,7 +143,8 @@
 - `/korean-docs` 워크플로우 — 리서치·사실검증·문체교정·자연스러움 검증 파이프라인
 - `write-korean-docs` pre-flight 스킬(트리거·비용 경고)
 
-[Unreleased]: https://github.com/HarryJhin/korean-docs/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/HarryJhin/korean-writing/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/HarryJhin/korean-writing/compare/v0.5.0...v1.0.0
 [0.1.3]: https://github.com/HarryJhin/korean-docs/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/HarryJhin/korean-docs/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/HarryJhin/korean-docs/compare/v0.1.0...v0.1.1

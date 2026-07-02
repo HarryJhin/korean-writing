@@ -1,12 +1,12 @@
 {
-  "name": "korean-docs-marketplace",
-  "description": "한글 기술 문서 생성 워크플로우와 한국어 문체 도구를 배포하는 마켓플레이스.",
+  "name": "korean-writing-marketplace",
+  "description": "한국어 글쓰기 지침 스킬과 문체 검사 훅을 배포하는 마켓플레이스.",
   "owner": { "name": "HarryJhin", "url": "https://github.com/HarryJhin" },
   "plugins": [
     {
-      "name": "korean-docs",
+      "name": "korean-writing",
       "source": "./",
-      "description": "한글 기술 레퍼런스 문서 생성 워크플로우 + pre-flight 스킬(write-korean-docs)"
+      "description": "한국어 글쓰기 지침(writing-korean)·교정(fixing-korean-text) 스킬 + S1 결정론 훅"
     }
   ]
 }

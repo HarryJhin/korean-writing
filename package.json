@@ -1,7 +1,7 @@
 {
-  "name": "korean-docs",
-  "version": "0.5.0",
-  "description": "deep-research 오마주 한글 기술문서 생성 워크플로우",
+  "name": "korean-writing",
+  "version": "1.0.0",
+  "description": "에이전트용 한국어 글쓰기 지침 플러그인",
   "type": "module",
   "license": "MIT",
   "scripts": {

@@ -1,30 +1,37 @@
-# korean-docs — 작업 지침
+# korean-writing — 작업 지침
 
-deep-research 오마주 한글 기술문서 생성 Claude Code 플러그인. 핵심 산출물은 코드가 아니라
-`workflows/korean-docs.js`(Workflow 오케스트레이션) + `lib/prose-checks.js`(결정론적 문체 검사).
+에이전트에게 한국어 글쓰기 지침을 제공하는 Claude Code 플러그인. 핵심 산출물은
+`skills/writing-korean/SKILL.md`(규칙 SoT), `lib/prose-checks.js`(S1 결정론 검사),
+훅 2개(`hooks/check-written-file.mjs`, `hooks/check-response.mjs`).
 
-## 워크플로우 파일 제약 (`workflows/korean-docs.js`)
-- **단일 파일 자기완결**: SessionStart 훅이 이 파일 하나만 `~/.claude/workflows/`로 복사한다. `lib/` 동반 불가 → `import`/`require` 금지. 공유 로직(S1 패턴 등)은 복제해서 인라인한다.
-- **`test/workflow-structure.test.js`가 src 전체를 정규식으로 검사**한다. 주석·문자열에도 `import ` 단어(`/\bimport\s/`), `Date.now`/`Math.random`을 쓰지 마라. 테스트가 코드뿐 아니라 주석까지 본다.
-- `lib/prose-checks.js`의 `S1_PATTERNS`와 워크플로우 인라인 `S1_INLINE`은 **동일 패턴을 복제**한 것 — 한쪽 수정 시 양쪽 동기화.
+## 용어
+- 사용자 대면 이름·문서에 "산문(prose)" 표현 금지. 도메인 용어는 "한국어 글쓰기"다.
+  코드 내부 식별자(`lib/prose-*.js`)는 churn 방지를 위해 유지.
 
-## 품질 게이트 원칙
-- 검증 단계는 **닫힌 루프**여야 한다: 검사→수정→**재검사**. 재작성본을 검증 없이 반환하지 마라. `MAX_REDO`로 상한.
-- LLM 판정과 결정론적 검사(S1)는 **AND로 묶어** 함께 닫는다.
-- 검증된 사실이 0건인 섹션은 **초안 전에 드롭**한다 — 작가에게 빈 껍데기를 넘기면 '출처 필요'만 가득한 산문이 나온다.
+## 규칙 SoT
+- 규칙 본문은 `skills/writing-korean/SKILL.md` 한 곳. 교정 스킬·README는 참조만 한다.
+- S1은 markdown 규칙(R1 표) ↔ `lib/prose-checks.js` 정규식 2곳 동기화. 한쪽 수정 시 양쪽.
+- `skills/writing-korean/SKILL.md` 본문에 S1 위반 리터럴(em dash 문자 등)을 넣지 마라.
+  테스트가 검사하고, 훅이 자기 파일에서 오탐한다. em dash는 "U+2014"로 표기.
+- repo의 한국어 문서(README·CHANGELOG 신규 항목 등)도 S1을 자기 준수한다. 역사적
+  산출물(리포트 2건, CHANGELOG 과거 항목)만 `korean-writing:ignore` 마커로 예외.
+
+## 훅 원칙
+- fail-open: stdin 파싱 실패·파일 없음·transcript 이상이면 exit 0 (세션을 막지 않는다).
+- 검사는 S1만. 판단이 필요한 규칙(번역투·만연체)은 훅으로 강제하지 않는다(오탐 노이즈).
+- Stop 훅 루프 가드: session_id+prompt_id 마커 파일. 같은 턴 두 번째 Stop은 무조건 통과.
+  마커를 못 쓰면 block하지 않는다(가드 없는 강제 금지).
+- opt-out: 파일에 `korean-writing:ignore` 마커. 한글 없는 파일·코드 파일은 자동 통과.
 
 ## 코드 패턴
-- `/g` 정규식으로 존재 여부 판정 시 `.test()` 금지(`lastIndex` 상태 버그) → `(str.match(re) || []).length` 사용.
+- `/g` 정규식으로 존재 여부 판정 시 `.test()` 금지(`lastIndex` 상태 버그)
+  → `(str.match(re) || []).length` 사용.
 
 ## 테스트·실행
-- `node --test` — 라이브러리·구조 테스트. 워크플로우 e2e는 실제 에이전트 spawn(유료)이라 자동 테스트 밖, 수동 스모크만.
+- `node --test`. 훅 테스트는 spawnSync로 실제 스크립트를 실행해 exit code·stderr를 검증한다.
 - node 실행 전 `nvm use`(`.nvmrc` = Node 24). fresh 셸은 PATH에 v22를 잡는다.
 
 ## 마켓플레이스·버전 관리
-- **권위 버전 = `.claude-plugin/plugin.json`의 `version`**. 사용자에게 코드 변경을 도달시키려면 이 값을 SemVer로 범프해야 한다 — 커밋 push만으론 부족(공식 docs: plugins-reference#version-management).
-- `marketplace.json` 플러그인 엔트리에 `version`을 **넣지 마라**. plugin.json 값이 조용히 override해서 stale 버전을 가린다(공식 docs: plugin-marketplaces#version-resolution).
-- `package.json` `version`은 플러그인 메커니즘과 무관(Node 관례)이나, **항상 `plugin.json`을 미러링**한다(SoT는 plugin.json). 범프는 두 파일을 같은 값으로 함께 올린다 — 한쪽만 올리면 분기가 부채로 남는다.
-- git tag 컨벤션은 `v{version}`(예: `v0.1.3`). 범프 커밋에 같은 태그를 단다. (단일 패키지 repo라 패키지명 prefix는 불필요 — 과거 `korean-docs--v` prefix는 0.1.3에서 제거.)
-- **버전 범프 시 `CHANGELOG.md`에 항목 추가**(Keep a Changelog 스타일, 한국어). 플러그인 로더가 파싱하진 않으나(스키마에 CHANGELOG 필드 없음) 마켓 사용자·repo 방문자용 릴리스 기록이다. 커밋이 Conventional Commits라 추후 자동 생성으로 승급 가능.
-
-> 버전 관리 불변식: **SoT = `plugin.json`** → `package.json` 미러 → `CHANGELOG.md` 항목 → `v{version}` 태그. `marketplace.json`엔 version 없음. 이 사슬이 어긋나면 stale 배포다.
+- 버전 불변식: **SoT = `plugin.json`** → `package.json` 미러 → `CHANGELOG.md` 항목(한국어,
+  Keep a Changelog) → `v{version}` 태그. `marketplace.json`엔 version 필드를 넣지 않는다
+  (plugin.json 값을 조용히 override해 stale 버전을 가린다).
