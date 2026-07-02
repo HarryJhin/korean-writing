@@ -11,6 +11,21 @@
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-07-02
+
+### Added
+- `writing-korean` R6 (글 구성·전개) 판단 규칙. 한국어 기술 글을 레지스터별로 조사해
+  추린 구성 규칙이다. 장면 도입, 소제목 레지스터 맞춤(설득=질문형·레퍼런스=명사구),
+  병렬 항목 동일 틀, 비유, 열거 개수, 결론 응축, 매체 관용구 복제 금지. 훅으로 강제하지
+  않는 판단 규칙이라 `lib/prose-checks.js` 동기화 대상이 아니다.
+- `skills/writing-korean/references/examples.md` 예시 뱅크. R2~R6의 good과 나쁜 예
+  대조쌍을 담아 SKILL.md에서 참조한다(progressive disclosure). 예시는 특정 매체 문장을
+  복제하지 않고 패턴을 드러내도록 새로 썼다.
+
+### Fixed
+- `SKILL.md` R1 표의 이중 피동 예시를 인라인 코드로 감쌌다. 평문 리터럴이 자기 파일의
+  S1 훅과 자기검증 테스트를 red로 만들던 문제를 해소했다(규칙 내용은 불변, 표현만 조정).
+
 ## [1.0.0] - 2026-07-02
 
 ### Changed
@@ -144,7 +159,8 @@
 - `/korean-docs` 워크플로우 — 리서치·사실검증·문체교정·자연스러움 검증 파이프라인
 - `write-korean-docs` pre-flight 스킬(트리거·비용 경고)
 
-[Unreleased]: https://github.com/HarryJhin/korean-writing/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/HarryJhin/korean-writing/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/HarryJhin/korean-writing/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/HarryJhin/korean-writing/compare/v0.5.0...v1.0.0
 [0.1.3]: https://github.com/HarryJhin/korean-docs/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/HarryJhin/korean-docs/compare/v0.1.1...v0.1.2
