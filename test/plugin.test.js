@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync, statSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 
 test('plugin.json is valid JSON and names the plugin', () => {
   const p = JSON.parse(readFileSync(new URL('../.claude-plugin/plugin.json', import.meta.url), 'utf8'))
@@ -17,14 +17,13 @@ test('marketplace.json is valid JSON and lists the plugin', () => {
   assert.ok(m.plugins.some(p => p.name === 'korean-docs' && p.source === './'))
 })
 
-test('hooks.json wires SessionStart to the workflow installer', () => {
+test('hooks.json wires PostToolUse(Write|Edit) and Stop to the S1 checkers', () => {
   const h = JSON.parse(readFileSync(new URL('../hooks/hooks.json', import.meta.url), 'utf8'))
-  const json = JSON.stringify(h)
-  assert.ok(json.includes('SessionStart'), 'SessionStart event')
-  assert.ok(json.includes('${CLAUDE_PLUGIN_ROOT}/hooks/install-workflow.sh'), 'uses plugin root path')
-})
-
-test('workflow installer script is executable', () => {
-  const mode = statSync(new URL('../hooks/install-workflow.sh', import.meta.url)).mode
-  assert.ok(mode & 0o111, 'install-workflow.sh must be executable')
+  const post = h.hooks.PostToolUse
+  assert.ok(Array.isArray(post) && post[0].matcher === 'Write|Edit', 'PostToolUse matcher')
+  assert.ok(JSON.stringify(post).includes('${CLAUDE_PLUGIN_ROOT}/hooks/check-written-file.mjs'))
+  const stop = h.hooks.Stop
+  assert.ok(Array.isArray(stop), 'Stop event')
+  assert.ok(JSON.stringify(stop).includes('${CLAUDE_PLUGIN_ROOT}/hooks/check-response.mjs'))
+  assert.ok(!JSON.stringify(h).includes('install-workflow'), '워크플로우 설치 훅 잔재 없음')
 })

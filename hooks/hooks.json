@@ -1,9 +1,17 @@
 {
   "hooks": {
-    "SessionStart": [
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          { "type": "command", "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/check-written-file.mjs" }
+        ]
+      }
+    ],
+    "Stop": [
       {
         "hooks": [
-          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/install-workflow.sh" }
+          { "type": "command", "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/check-response.mjs" }
         ]
       }
     ]
