@@ -38,8 +38,9 @@
 
 ### Migration
 - 기존 korean-docs 설치자는 재설치가 필요하다:
-  `/plugin marketplace add HarryJhin/korean-writing` 후
-  `/plugin install korean-writing@korean-writing-marketplace`.
+  `claude plugin marketplace add HarryJhin/korean-writing` 후
+  `claude plugin install korean-writing@korean-writing-marketplace`.
+  (구 마켓은 `claude plugin marketplace rm korean-docs-marketplace`로 제거)
 - `~/.claude/workflows/korean-docs.js`는 더 이상 관리되지 않는다. 수동 삭제를 권장한다.
 
 ## [0.5.0] - 2026-06-25
