@@ -1,6 +1,6 @@
 ---
 name: writing-korean
-description: Use when writing Korean text of any kind (responses, documents, README, commit messages, comments). Provides verified Korean writing rules that prevent 번역투, AI슬롭, 이중 피동 from the first draft. 트리거 - 한국어로 답변·문서·커밋 메시지 작성, 한국어 글쓰기 지침, 한국어답게 써줘.
+description: Use when writing Korean text of any kind (responses, documents, README, commit messages, comments). Provides verified Korean writing rules that prevent 번역투, AI슬롭, 이중 피동 from the first draft. 목적·독자가 불명확한 새 글을 처음부터 기획할 때는 planning-korean-writing으로 먼저 브리프하고 넘겨받는다. 트리거 - 한국어로 답변·문서·커밋 메시지 작성, 한국어 글쓰기 지침, 한국어답게 써줘.
 ---
 
 # writing-korean (한국어 글쓰기 지침)
