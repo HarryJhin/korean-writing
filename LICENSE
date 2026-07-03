@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2026 korean-docs contributors
+Copyright (c) 2026 korean-writing contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,13 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-The Korean prose-correction rules embedded in the workflow are adapted from
-im-not-ai (Humanize KR, epoko77-ai) and draw on Korean translation-studies
-scholarship and KatFishNet (ACL 2025, arXiv:2503.00032). Pipeline structure is an
-homage to Claude Code's deep-research workflow.
-
-Portions adapted from im-not-ai, Copyright (c) epoko77-ai, released under the
-MIT License (https://github.com/epoko77-ai/im-not-ai). The above MIT permission
-and warranty-disclaimer notice applies equally to those portions.
