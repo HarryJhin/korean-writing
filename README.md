@@ -26,6 +26,7 @@
 |---|---|
 | `writing-korean` 스킬 | 글쓰기 규칙의 단일 출처(SoT). 한국어 글을 쓰기 전에 로드 |
 | `fixing-korean-text` 스킬 | 기존 텍스트 교정 절차. 규칙은 writing-korean을 참조 |
+| `planning-korean-writing` 스킬 | 쓰기 전 6하원칙 브리프. 목적·독자·핵심 메시지를 확보해 `writing-korean`으로 인계 |
 | `references/examples.md` | R2~R6 good과 나쁜 예 대조쌍. 규칙 적용 시 참조 |
 | PostToolUse 훅 | 한글 텍스트 파일(.md/.markdown/.txt) 저장 시 S1 위반 검사 |
 | Stop 훅 | 한국어 응답에 S1 위반이 있으면 1회 재작성 유도 |
@@ -57,6 +58,8 @@ em dash(U+2014) 삽입구, 이모지 장식, 본문 속 세미콜론, 이중 피
 
 ## 사용
 
+- 기획부터: 목적·독자가 안 정해진 새 글은 `planning-korean-writing`이 6하원칙 브리프로
+  방향을 잡은 뒤 `writing-korean`에 넘긴다. 내용이 이미 명확하면 이 단계를 건너뛴다.
 - 새로 쓸 때: "이 내용 한국어로 정리해줘" 같은 요청에서 `writing-korean` 스킬이 규칙을
   로드한다. 명시 호출도 된다.
 - 고칠 때: "이 문서 번역투 고쳐줘", "AI 냄새 제거해줘"로 `fixing-korean-text`가 뜬다.
