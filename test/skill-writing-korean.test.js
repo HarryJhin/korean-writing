@@ -10,10 +10,17 @@ test('writing-korean: 유효한 프론트매터 (gerund명 + 3인칭 Use when)',
   assert.match(skill, /description:\s*Use when/)
 })
 
-test('writing-korean: R1~R5 규칙 골격', () => {
-  for (const r of ['R1', 'R2', 'R3', 'R4', 'R5']) {
+test('writing-korean: R1~R7 규칙 골격', () => {
+  for (const r of ['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7']) {
     assert.ok(skill.includes(r), `${r} 섹션 존재`)
   }
+})
+
+test('writing-korean: v1.3.0 수입 규칙 명시 (연결어미 쉼표·슬롭 어휘군·서식 절제)', () => {
+  assert.ok(skill.includes('연결어미'), '연결어미 뒤 쉼표 규칙')
+  assert.ok(skill.includes('슬롭 어휘군'), 'R4 슬롭 어휘군 표')
+  assert.ok(skill.includes('서식·강조 절제'), 'R7 서식 절제')
+  assert.ok(skill.includes('im-not-ai-갭-심사') || skill.includes('im-not-ai 갭 심사'), '심사 문서 근거 링크')
 })
 
 test('writing-korean: S1 4종을 규칙으로 명시', () => {

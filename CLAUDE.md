@@ -11,6 +11,8 @@
 ## 규칙 SoT
 - 규칙 본문은 `skills/writing-korean/SKILL.md` 한 곳. 교정 스킬·README는 참조만 한다.
 - S1은 markdown 규칙(R1 표) ↔ `lib/prose-checks.js` 정규식 2곳 동기화. 한쪽 수정 시 양쪽.
+  S2 마커도 규칙 본문(R2·R4) ↔ `S2_MARKERS`가 대응한다. 마커 추가·삭제 시 양쪽과
+  `docs/im-not-ai-갭-심사.md` 판정 근거를 함께 갱신.
 - `skills/writing-korean/SKILL.md` 본문에 S1 위반 리터럴(em dash 문자 등)을 넣지 마라.
   테스트가 검사하고, 훅이 자기 파일에서 오탐한다. em dash는 "U+2014"로 표기.
 - repo의 한국어 문서(README·CHANGELOG 신규 항목 등)도 S1을 자기 준수한다. 역사적
