@@ -16,6 +16,12 @@ test('writing-korean: R1~R7 규칙 골격', () => {
   }
 })
 
+test('writing-korean: v1.4.0 구성 보강 (주제문·신호 장치·3차 리포트 근거)', () => {
+  assert.ok(skill.includes('주제문'), 'R6 주제문 권고')
+  assert.ok(/헤딩.*개요.*요약|개요.*요약/.test(skill), 'R6 신호 장치')
+  assert.ok(skill.includes('3차-적극원칙'), '3차 리포트 근거 링크')
+})
+
 test('writing-korean: v1.3.0 수입 규칙 명시 (연결어미 쉼표·슬롭 어휘군·서식 절제)', () => {
   assert.ok(skill.includes('연결어미'), '연결어미 뒤 쉼표 규칙')
   assert.ok(skill.includes('슬롭 어휘군'), 'R4 슬롭 어휘군 표')

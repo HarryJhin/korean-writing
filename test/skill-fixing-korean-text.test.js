@@ -31,6 +31,12 @@ test('fixing-korean-text: 사실 보존·날조 금지', () => {
   assert.ok(/날조 금지/.test(skill), 'no-fabrication')
 })
 
+test('fixing-korean-text: v1.4.0 재귀 퇴고 + R1~R7 로드', () => {
+  assert.ok(skill.includes('재귀'), '재귀 퇴고 프로세스')
+  assert.ok(skill.includes('R1~R7'), 'R7 포함 로드')
+  assert.ok(!skill.includes('R1~R5'), '구버전 R1~R5 표기 잔재 없음')
+})
+
 test('fixing-korean-text: 용어 규칙 — "산문" 금지', () => {
   assert.ok(!skill.includes('산문'), '"산문" 표현 금지')
 })

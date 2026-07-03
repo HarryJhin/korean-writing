@@ -11,7 +11,7 @@ description: Use when the user wants to fix or polish existing Korean text, remo
 ## 1. 규칙 로드 (SoT)
 
 교정 기준은 이 플러그인의 규칙 SoT다. 먼저 이 스킬의 base directory 기준
-`../writing-korean/SKILL.md`를 Read해서 R1~R5 규칙을 로드한다. 규칙을 이 파일에
+`../writing-korean/SKILL.md`를 Read해서 R1~R7 규칙을 로드한다. 규칙을 이 파일에
 복제하지 않는다. SoT가 항상 우선한다.
 
 ## 2. 입력 감지
@@ -22,15 +22,22 @@ description: Use when the user wants to fix or polish existing Korean text, remo
 
 ## 3. 교정
 
-R1~R5 기준으로 교정본을 만든다. 사실·수치·고유명사·코드 블록·인용 `[n]`은 100% 보존한다.
+R1~R7 기준으로 교정본을 만든다. 사실·수치·고유명사·코드 블록·인용 `[n]`은 100% 보존한다.
 날조 금지. 근거 없으면 채우지 말고 삭제한다.
+
+교정은 한 번의 마지막 수리가 아니라 재귀 과정이다(Flower & Hayes 1981). 긴 텍스트는
+섹션 단위로 교정과 검사를 반복하고, 앞 섹션에서 배운 지적을 뒤 섹션에 바로 적용한다.
+"고쳐쓰기가 잘 쓰기의 본질"이라는 정전 원칙(Zinsser, On Writing Well 6판 2001)이
+이 절차의 근거다.
 
 ## 4. S1 결정론 검증 (Bash 강제, 폐루프)
 
 교정본을 임시 파일에 쓴 뒤 CLI로 S1을 검사한다. node 실행 전 nvm을 로드한다.
 
-    export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh"; nvm use
-    node "$CLAUDE_PLUGIN_ROOT/lib/prose-cli.js" <교정본_파일.md>
+```bash
+export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh"; nvm use
+node "$CLAUDE_PLUGIN_ROOT/lib/prose-cli.js" <교정본_파일.md>
+```
 
 - exit 0 = S1 clean. exit 1 = 위반 있음(stdout JSON의 `s1[]`에 종류·위치).
 - 위반이 있으면 해당 패턴을 제거하도록 재교정하고 다시 검사한다(검사-수정-재검사 폐루프).

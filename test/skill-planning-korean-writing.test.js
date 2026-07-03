@@ -29,6 +29,14 @@ test('planning-korean-writing: writing-korean으로 인계', () => {
   assert.ok(skill.includes('writing-korean'), '인계 대상 스킬')
 })
 
+test('planning-korean-writing: v1.4.0 적극 원칙 (응집성 조건부·역피라미드·목표 선설정)', () => {
+  assert.ok(/사전지식|배경지식/.test(skill), '독자 지식수준 판정')
+  assert.ok(skill.includes('응집성'), '응집성 조절 지시')
+  assert.ok(skill.includes('역피라미드'), '정보성 글 핵심 선배치')
+  assert.ok(/Flower\s*&\s*Hayes/.test(skill), '목표 네트워크 이론 기반')
+  assert.ok(skill.includes('R1~R7'), 'R7 포함 표기')
+})
+
 test('planning-korean-writing: 문체 SoT 비복제', () => {
   assert.ok(!skill.includes('| em dash'), '문체 규칙 표 미복제')
   assert.ok(/SoT|단일 출처/.test(skill), 'SoT 참조 명시')
