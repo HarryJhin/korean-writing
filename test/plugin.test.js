@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs'
 test('plugin.json is valid JSON and names the plugin', () => {
   const p = JSON.parse(readFileSync(new URL('../.claude-plugin/plugin.json', import.meta.url), 'utf8'))
   assert.equal(p.name, 'korean-writing')
-  assert.equal(p.version, '1.2.0')
+  assert.equal(p.version, '1.3.0')
   assert.ok(p.description, 'description present')
   // hooks/hooks.json은 기본 위치라 자동 발견된다. plugin.json에 또 선언하면
   // 같은 파일을 두 번 로드해 "Duplicate hooks file" 로드 에러가 난다 → 선언 금지.
