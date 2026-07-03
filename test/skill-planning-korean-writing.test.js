@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { detectS1, stripCode } from '../lib/prose-checks.js'
 
 const skill = readFileSync(new URL('../skills/planning-korean-writing/SKILL.md', import.meta.url), 'utf8')
 
@@ -34,12 +35,12 @@ test('planning-korean-writing: 문체 SoT 비복제', () => {
 })
 
 test('planning-korean-writing: 파일 산출 금지 (범위 준수)', () => {
-  assert.ok(/파일(로|을)?\s*(저장|산출|쓰지)/.test(skill), '브리프 파일 저장 금지 명시')
+  assert.ok(/파일로\s*저장하지\s*않는다/.test(skill), '브리프 파일 저장 금지 (부정 표현) 명시')
 })
 
-test('planning-korean-writing: 본문에 S1 위반이 없다 (자기 규칙 준수)', () => {
-  assert.ok(!skill.includes('—'), 'em dash 리터럴 없음')
-  assert.ok(!/;\s*$/m.test(skill), '본문 세미콜론 없음')
+test('planning-korean-writing: 본문에 S1 위반이 없다 (실 훅 detectS1로 4종 전부)', () => {
+  const violations = detectS1(stripCode(skill))
+  assert.equal(violations.length, 0, `S1 위반 없음, 발견: ${JSON.stringify(violations)}`)
 })
 
 test('planning-korean-writing: 용어 규칙 — "산문" 금지', () => {
