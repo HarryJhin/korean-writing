@@ -7,7 +7,7 @@ export function readAgent(name) {
 
 export function assertAgentInvariants(assert, md, { name }) {
   assert.match(md, /^---/, 'frontmatter 시작')
-  assert.match(md, new RegExp(`name:\\s*${name}`), 'name 필드')
+  assert.match(md, new RegExp(`^name:\\s*${name}\\s*$`, 'm'), 'name 필드')
   assert.match(md, /description:\s*\S/, 'description 필드')
   assert.match(md, /model:\s*sonnet/, 'model sonnet')
   const s1 = detectS1(stripCode(md))
