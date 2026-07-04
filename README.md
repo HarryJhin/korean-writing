@@ -25,7 +25,8 @@
 | 구성 요소 | 역할 |
 |---|---|
 | `writing-korean` 스킬 | 글쓰기 규칙의 단일 출처(SoT). 한국어 글을 쓰기 전에 로드 |
-| `fixing-korean-text` 스킬 | 기존 텍스트 교정 절차. 규칙은 writing-korean을 참조 |
+| `fixing-korean-text` 스킬 | 기존 텍스트 교정 절차. 규칙은 writing-korean을 참조. 긴 문서는 감사 모드로 리뷰어 3종에 순차 위임 |
+| `agents/` 리뷰어 3종 | 감사 모드가 문장·어휘표층·담화 층위로 순차 디스패치하는 격리 교정 리뷰어(sentence·surface·discourse) |
 | `planning-korean-writing` 스킬 | 쓰기 전 6하원칙 브리프. 목적·독자·핵심 메시지를 확보해 `writing-korean`으로 인계 |
 | `references/examples.md` | R2~R7 good과 나쁜 예 대조쌍. 규칙 적용 시 참조 |
 | PostToolUse 훅 | 한글 텍스트 파일(.md/.markdown/.txt) 저장 시 S1 위반 검사 |
