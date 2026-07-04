@@ -1,7 +1,7 @@
 {
   "name": "korean-writing",
   "description": "에이전트가 올바른 한국어로 글을 쓰게 만드는 지침 플러그인. writing-korean(규칙 SoT)·fixing-korean-text(교정) 스킬과 S1 결정론 훅(PostToolUse·Stop)을 제공한다.",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "author": { "name": "HarryJhin", "url": "https://github.com/HarryJhin" },
   "homepage": "https://github.com/HarryJhin/korean-writing",
   "repository": "https://github.com/HarryJhin/korean-writing",
