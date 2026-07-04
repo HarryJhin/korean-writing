@@ -1,5 +1,10 @@
 # korean-writing
 
+[![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-D97757?logo=claudecode&logoColor=white)](#설치)
+[![version](https://img.shields.io/github/v/tag/HarryJhin/korean-writing?label=version&color=1f6feb)](./CHANGELOG.md)
+[![license MIT](https://img.shields.io/badge/license-MIT-1f6feb)](./LICENSE)
+[![Node 24](https://img.shields.io/badge/node-24-3c873a)](./.nvmrc)
+
 **AI가 쓰는 어색한 한국어를 고치는 Claude Code 플러그인.**
 
 에이전트가 한국어로 글을 쓰면 번역투와 AI 티가 배어 나옵니다. korean-writing은
