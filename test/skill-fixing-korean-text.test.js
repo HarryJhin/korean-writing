@@ -40,3 +40,17 @@ test('fixing-korean-text: v1.4.0 재귀 퇴고 + R1~R7 로드', () => {
 test('fixing-korean-text: 용어 규칙 — "산문" 금지', () => {
   assert.ok(!skill.includes('산문'), '"산문" 표현 금지')
 })
+
+test('fixing-korean-text: 감사 모드 순차 파이프라인 (3 리뷰어 상향식)', () => {
+  assert.ok(/감사 모드/.test(skill), '감사 모드 절차')
+  assert.ok(skill.includes('korean-writing:sentence-reviewer'), 'sentence 리뷰어 디스패치')
+  assert.ok(skill.includes('korean-writing:surface-reviewer'), 'surface 리뷰어 디스패치')
+  assert.ok(skill.includes('korean-writing:discourse-reviewer'), 'discourse 리뷰어 디스패치')
+  assert.ok(/병렬 아님|순차/.test(skill), '병렬 아닌 순차')
+})
+
+test('fixing-korean-text: 감사 모드 발동 임계값·findings 유보·원본 보존', () => {
+  assert.ok(/파일 모드|철저/.test(skill), '발동 임계값')
+  assert.ok(/findings/.test(skill), 'findings 유보')
+  assert.ok(/건드리지 않는다|무수정|원본/.test(skill), '원본 보존')
+})
