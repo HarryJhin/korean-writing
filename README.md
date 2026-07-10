@@ -48,6 +48,18 @@
 세션 안에서는 `/plugin marketplace add`, `/plugin install`로도 됩니다. 쓰는 데 필요한
 것은 Claude Code뿐입니다. 직접 개발하거나 테스트할 때만 Node 24(`.nvmrc`)가 필요합니다.
 
+## 업데이트
+
+새 버전이 나오면 마켓플레이스 카탈로그를 갱신합니다. 카탈로그가 캐시되므로 갱신해야
+새 버전이 들어옵니다.
+
+    claude plugin marketplace update korean-writing-marketplace
+
+세션 안에서는 `/plugin marketplace update korean-writing-marketplace` 뒤에
+`/reload-plugins`로 재시작 없이 적용합니다. 설치는 repo(`HarryJhin/korean-writing`)로
+add하지만 업데이트는 마켓플레이스 이름(`korean-writing-marketplace`)으로 부르는 점에
+주의합니다. 새 버전은 `plugin.json`의 `version`을 올렸을 때만 나갑니다.
+
 ## 시작하기
 
 설치 후 따로 켤 것은 없습니다. 세 가지 흐름으로 씁니다.

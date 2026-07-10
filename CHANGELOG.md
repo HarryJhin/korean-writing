@@ -11,6 +11,10 @@
 
 ## [Unreleased]
 
+### Added
+- README에 `업데이트` 섹션. `marketplace update` + `/reload-plugins` 흐름과, add는
+  repo 이름·update는 마켓플레이스 이름으로 부르는 인자 차이를 안내한다.
+
 ## [1.6.0] - 2026-07-10
 
 ### Changed
