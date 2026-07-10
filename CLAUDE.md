@@ -2,7 +2,7 @@
 
 에이전트에게 한국어 글쓰기 지침을 제공하는 Claude Code 플러그인. 핵심 산출물은
 `skills/writing-korean/SKILL.md`(규칙 SoT), `lib/prose-checks.js`(S1 결정론 검사),
-훅 2개(`hooks/check-written-file.mjs`, `hooks/check-response.mjs`).
+훅 2개(`hooks/check-written-file.mjs`, `hooks/inject-rules.mjs`).
 
 ## 용어
 - 사용자 대면 이름·문서에 "산문(prose)" 표현 금지. 도메인 용어는 "한국어 글쓰기"다.
@@ -19,10 +19,16 @@
   산출물(리포트 2건, CHANGELOG 과거 항목)만 `korean-writing:ignore` 마커로 예외.
 
 ## 훅 원칙
-- fail-open: stdin 파싱 실패·파일 없음·transcript 이상이면 exit 0 (세션을 막지 않는다).
+- 두 갈래로 나눈다. 파일(PostToolUse `check-written-file`)은 저장물을 사후 검사·교정하고,
+  응답(SessionStart `inject-rules`)은 S1 규칙을 세션 시작 시 주입해 사전 유도한다.
+  응답을 사후 차단하지 않는다. 나간 응답은 되돌릴 수 없어 통제 대상이 아니다.
+- fail-open: stdin 파싱 실패·파일 없음이면 exit 0 (세션을 막지 않는다). SessionStart는
+  exit 2도 비차단이라(공식 docs) 세션을 못 막는다. inject-rules는 상수를 print할 뿐이다.
 - 검사는 S1만. 판단이 필요한 규칙(번역투·만연체)은 훅으로 강제하지 않는다(오탐 노이즈).
-- Stop 훅 루프 가드: session_id+prompt_id 마커 파일. 같은 턴 두 번째 Stop은 무조건 통과.
-  마커를 못 쓰면 block하지 않는다(가드 없는 강제 금지).
+- SessionStart 주입: R1 목록은 `S1_PATTERNS`에서 파생한다. 비-S1 최상위 신호(연결어미
+  쉼표·에의해류·할 수 있다·결산 상투구)는 큐레이션한 하드코딩이라 규칙 본문 R2·R4와
+  `S2_MARKERS`에 대응한다. 고칠 땐 그쪽도 함께 본다. 주입은 게이트가 아니라 오탐 비용이
+  없어 S1을 넘어 방어한다. 반면 파일 훅(PostToolUse)은 게이트라 S1만 검사한다.
 - opt-out: 파일에 `korean-writing:ignore` 마커. 한글 없는 파일·코드 파일은 자동 통과.
 
 ## 코드 패턴
